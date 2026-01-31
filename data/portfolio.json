@@ -1,0 +1,38 @@
+[
+  {
+    "code": "022084",
+    "name": "华安中证有色金属",
+    "marketValue": 8000,
+    "costPrice": 1.234
+  },
+  {
+    "code": "007911",
+    "name": "大成有色金属",
+    "marketValue": 10000
+  },
+  {
+    "code": "020640",
+    "name": "广发半导体",
+    "marketValue": 13600
+  },
+  {
+    "code": "019455",
+    "name": "中航创新药",
+    "marketValue": 2864
+  },
+  {
+    "code": "023754",
+    "marketValue": 8655,
+    "name": "永盈ai"
+  },
+  {
+    "code": "015945",
+    "marketValue": 5341.25,
+    "name": "易方达军工"
+  },
+  {
+    "code": "003625",
+    "marketValue": 287.56,
+    "name": "华夏恒生创新药"
+  }
+]

@@ -1,0 +1,24 @@
+{
+  "name": "fund-calculator",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "nodemon --delay 2 app.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.13.4",
+    "cheerio": "^1.2.0",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "iconv-lite": "^0.7.2",
+    "web-streams-polyfill": "^4.2.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.11"
+  }
+}

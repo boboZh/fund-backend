@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>我的基金实时看板</title>
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap");
+      body {
+        font-family: "Inter", "Microsoft YaHei", sans-serif;
+        background-color: #f3f4f6;
+      }
+      .up-color {
+        color: #ef4444;
+      } /* 红涨 */
+      .down-color {
+        color: #22c55e;
+      } /* 绿跌 */
+      .loading-spin {
+        animation: spin 1s linear infinite;
+      }
+      @keyframes spin {
+        from {
+          transform: rotate(0deg);
+        }
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+  </head>
+  <body class="p-4 md:p-8">
+    <div class="max-w-5xl mx-auto">
+      <!-- 顶部标题和刷新按钮 -->
+      <div class="flex justify-between items-center mb-8">
+        <div>
+          <h1 class="text-2xl font-bold text-gray-800">基金投资看板</h1>
+          <p class="text-sm text-gray-500" id="update-time">
+            最后更新：尚未同步
+          </p>
+        </div>
+        <button
+          onclick="fetchData()"
+          id="refresh-btn"
+          class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition flex items-center shadow-md"
+        >
+          <svg
+            id="refresh-icon"
+            class="w-4 h-4 mr-2"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+            ></path>
+          </svg>
+          立即刷新
+        </button>
+      </div>
+
+      <!-- 概览卡片 -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+          <p class="text-gray-500 text-sm mb-1">总持仓金额 (元)</p>
+          <h2 class="text-3xl font-bold text-gray-900" id="total-value">
+            ¥ 0.00
+          </h2>
+        </div>
+        <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+          <p class="text-gray-500 text-sm mb-1">当日预估盈亏</p>
+          <h2 class="text-3xl font-bold" id="total-profit">¥ 0.00</h2>
+        </div>
+      </div>
+
+      <!-- 持仓列表 -->
+      <div
+        class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden"
+      >
+        <div class="px-6 py-4 border-b border-gray-50 bg-gray-50/50">
+          <h3 class="font-semibold text-gray-700">持仓明细</h3>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left">
+            <thead>
+              <tr class="text-gray-400 text-sm uppercase">
+                <th class="px-6 py-4 font-medium">基金名称</th>
+                <th class="px-6 py-4 font-medium text-right">实时涨跌</th>
+                <th class="px-6 py-4 font-medium text-right">持有金额</th>
+                <th class="px-6 py-4 font-medium text-right">今日收益</th>
+              </tr>
+            </thead>
+            <tbody
+              id="fund-table-body"
+              class="divide-y divide-gray-100 text-gray-700"
+            >
+              <!-- 数据由 JS 填充 -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 警醒格言 -->
+      <div class="mt-8 text-center text-gray-400 text-sm italic">
+        “跌的第一天不要补，建仓莫过两千，达标果断离场。”
+      </div>
+    </div>
+
+    <script>
+      const API_URL = "http://localhost:3000/api/portfolio";
+
+      async function fetchData() {
+        const btn = document.getElementById("refresh-btn");
+        const icon = document.getElementById("refresh-icon");
+
+        // 开始加载动画
+        btn.disabled = true;
+        icon.classList.add("loading-spin");
+
+        try {
+          const response = await fetch(API_URL);
+          const data = await response.json();
+
+          // 更新概览
+          document.getElementById("total-value").innerText = `¥ ${Number(
+            data.summary.totalValue
+          ).toLocaleString()}`;
+
+          const totalProfitEl = document.getElementById("total-profit");
+          const profit = Number(data.summary.totalDailyProfit);
+          totalProfitEl.innerText = `${
+            profit >= 0 ? "+" : ""
+          }${profit.toLocaleString()}`;
+          totalProfitEl.className = `text-3xl font-bold ${
+            profit !== "--" ? (profit >= 0 ? "up-color" : "down-color") : ""
+          }`;
+
+          // 更新时间
+          document.getElementById(
+            "update-time"
+          ).innerText = `最后更新：${data.timestamp}`;
+
+          // 更新表格
+          const tbody = document.getElementById("fund-table-body");
+          tbody.innerHTML = "";
+
+          data.funds.forEach((fund) => {
+            const profitVal = parseFloat(fund.dailyProfit);
+            const changeVal = parseFloat(fund.change);
+
+            const row = `
+                        <tr class="hover:bg-gray-50 transition">
+                            <td class="px-6 py-4">
+                                <div class="font-semibold text-gray-800">${
+                                  fund.name
+                                }</div>
+                                <div class="text-xs text-gray-400">${
+                                  fund.code
+                                }</div>
+                            </td>
+                            <td class="px-6 py-4 text-right font-medium ${
+                              fund.change !== "--"
+                                ? changeVal >= 0
+                                  ? "up-color"
+                                  : "down-color"
+                                : ""
+                            }">
+                                ${changeVal >= 0 ? "+" : ""}${fund.change}
+                            </td>
+                            <td class="px-6 py-4 text-right font-mono">
+                                ¥${Number(fund.marketValue).toLocaleString()}
+                            </td>
+                            <td class="px-6 py-4 text-right font-bold ${
+                              fund.dailyProfit !== "--"
+                                ? profitVal >= 0
+                                  ? "up-color"
+                                  : "down-color"
+                                : ""
+                            }">
+                                ${profitVal >= 0 ? "+" : ""}${fund.dailyProfit}
+                            </td>
+                        </tr>
+                    `;
+            tbody.innerHTML += row;
+          });
+        } catch (error) {
+          alert("获取数据失败，请确保后端服务已启动！");
+          console.error(error);
+        } finally {
+          // 停止加载动画
+          btn.disabled = false;
+          icon.classList.remove("loading-spin");
+        }
+      }
+
+      // 页面加载时立即获取一次
+      fetchData();
+
+      // 每 60 秒自动刷新一次
+      setInterval(fetchData, 60000);
+    </script>
+  </body>
+</html>
