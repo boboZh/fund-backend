@@ -1,54 +1,53 @@
 const express = require("express");
+const cookieParser = require("cookie-parser");
 const cors = require("cors");
-
-const calculator = require("./services/calculator");
-const crawler = require("./services/crawler");
+const createError = require("http-errors");
+const userRouter = require("./routes/user");
+const fundRouter = require("./routes/fund");
 
 const app = express();
-const PORT = 3000;
 
-app.use(cors()); // 允许所有来源访问
+// --- 中间件配置 ---
 
-// 设置 Express 全局响应头，确保浏览器以 UTF-8 解析
+// 1. 处理跨域
+app.use(
+  cors({
+    origin: "http://localhost:5173",
+    credentials: true,
+  }),
+);
+
+// 解析 JSON 请求体
+app.use(express.json());
+
+// 2. 引入 cookie-parser (修正了 secret 拼写)
+const COOKIE_SECRET = "your random secret string 123";
+app.use(cookieParser(COOKIE_SECRET));
+
+// --- 路由配置 ---
+
+// 注意：这里决定了你的基础路径
+// 访问 login 接口将是 /api/user/login
+app.use("/api/user", userRouter);
+app.use("/api/fund", fundRouter);
+
+// --- 错误处理 ---
+
+// 404 捕获：如果上面的路由都没匹配上，执行这里
 app.use((req, res, next) => {
-  res.setHeader("Content-Type", "application/json; charset=utf-8");
-  next();
+  next(createError(404, "接口不存在"));
 });
 
-// 获取单个基金的持仓数据和实时估值
-app.get("/api/estimate/:code", async (req, res) => {
-  const fundCode = req.params.code;
-  try {
-    const estimateResult = await calculator.getEstimate(fundCode);
-    res.json(estimateResult);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
+// 全局错误处理：接收所有 next(err) 传过来的错误
+app.use((err, req, res, next) => {
+  const status = err.status || 500;
+  res.status(status).json({
+    success: false,
+    status: status,
+    message: err.message,
+  });
 });
 
-// 获取所有持仓数据
-app.get("/api/portfolio", async (req, res) => {
-  try {
-    const report = await calculator.getPortfolioReport();
-    res.json(report);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// 获取基金信息
-app.get("/api/fund-info/:code", async (req, res) => {
-  const fundCode = req.params.code;
-  try {
-    const fundInfo = await crawler.getFundHoldings(fundCode);
-    res.json(fundInfo);
-  } catch (error) {
-    res.status(500).json({
-      error: error.message,
-    });
-  }
-});
-
-app.listen(PORT, () => {
-  console.log(`服务已启动：http://localhost:${PORT}`);
-});
+app.listen(3000, () =>
+  console.log("✅ Server running at http://localhost:3000"),
+);

@@ -1,6 +1,11 @@
 # Built application files
 *.apk
 *.ap_
+
+# env config files
+.env
+.env.dev
+.env.production
  
 # Files for the Dalvik VM
 *.dex

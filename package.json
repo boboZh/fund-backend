@@ -5,7 +5,10 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "nodemon --delay 2 app.js"
+    "dev": "cross-env NODE_ENV=dev nodemon --delay 2 app.js",
+    "prod": "cross-env NODE_ENV=production pm2 start app.js",
+    "db:init:dev": "cross-env NODE_ENV=dev node scripts/initDb.js",
+    "db:init:prod": "cross-env NODE_ENV=production node scripts/initDb.js"
   },
   "keywords": [],
   "author": "",
@@ -19,6 +22,13 @@
     "web-streams-polyfill": "^4.2.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.11"
+    "cookie-parser": "^1.4.7",
+    "cross-env": "^10.1.0",
+    "crypto": "^1.0.1",
+    "dotenv": "^17.2.3",
+    "http-errors": "^2.0.1",
+    "mysql2": "^3.16.2",
+    "nodemon": "^3.1.11",
+    "xss": "^1.0.15"
   }
 }
