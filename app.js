@@ -28,11 +28,16 @@ app.use(cookieParser(COOKIE_SECRET));
 // --- 路由配置 ---
 
 // 注意：这里决定了你的基础路径
-// 访问 login 接口将是 /api/user/login
-app.use("/user", userRouter);
-app.use("/fund", fundRouter);
+// 访问 login 接口将是 /user/login
+app.use("/api/user", userRouter);
+app.use("/api/fund", fundRouter);
 
 // --- 错误处理 ---
+
+app.use((req, res, next) => {
+  console.log("--req path--", req.path);
+  next();
+});
 
 // 404 捕获：如果上面的路由都没匹配上，执行这里
 app.use((req, res, next) => {
