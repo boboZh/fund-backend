@@ -1,5 +1,8 @@
 const { exec } = require("../db/mysql");
-const { getFundHoldings } = require("../utils/crawler");
+const { getFundHoldings } = require("../services/crawler");
+const { getPortfolioReport } = require("../services/calculator");
+const { parseScreenshot } = require("../services/ocr");
+const fs = require("fs");
 
 // 根据基金代码获取基金信息
 const getFundInfoByCode = async (fundCode) => {
@@ -86,7 +89,37 @@ const batchDeleteFund = async (userId, fundCodes) => {
 /**
  * 获取持仓统计信息
  */
-const getPortfolio = async () => {};
+const getPortfolio = async (userId) => {
+  const sql = `
+        SELECT fund_code, amount, updated_at 
+        FROM portfolios 
+        WHERE user_id = ? 
+        ORDER BY updated_at DESC
+    `;
+  const list = await exec(sql, [userId]);
+  /**
+   *
+   */
+  const report = await getPortfolioReport(
+    list.map((item) => {
+      return {
+        code: item.fund_code,
+        marketValue: item.amount,
+      };
+    }),
+  );
+
+  return report;
+};
+
+// 图片识别
+const ocrAnalyze = async (file) => {
+  const data = await parseScreenshot(file.path);
+  // 清理临时文件
+  fs.unlinkSync(file.path);
+
+  return data;
+};
 
 module.exports = {
   getFundInfoByCode,
@@ -97,4 +130,5 @@ module.exports = {
   getPortfolio,
   modifyFundAmount,
   batchModifyFundAmount,
+  ocrAnalyze,
 };

@@ -107,5 +107,4 @@ async function getStocksRealtime(stockCodes) {
   }
 }
 
-async function getFundRealtime(fundCode) {}
 module.exports = { getFundHoldings, getStocksRealtime };

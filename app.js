@@ -1,6 +1,7 @@
 const express = require("express");
 const cookieParser = require("cookie-parser");
 const cors = require("cors");
+const fundMapService = require("./services/fundMap");
 const createError = require("http-errors");
 const userRouter = require("./routes/user");
 const fundRouter = require("./routes/fund");
@@ -48,6 +49,7 @@ app.use((err, req, res, next) => {
   });
 });
 
-app.listen(3000, () =>
-  console.log("✅ Server running at http://localhost:3000"),
-);
+app.listen(3000, async () => {
+  await fundMapService.init();
+  console.log("✅ Server running at http://localhost:3000");
+});

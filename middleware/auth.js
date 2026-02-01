@@ -1,13 +1,5 @@
 const { ErrorModel } = require("../model/resModel");
 
-module.exports = (req, res, next) => {
-  if (req.session.username) {
-    next();
-    return;
-  }
-  res.json(new ErrorModel("未登录"));
-};
-
 // 权限校验中间件
 const authMiddleware = (req, res, next) => {
   // 读取签名的cookie:req.signedCookies.userId

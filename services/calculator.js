@@ -1,9 +1,8 @@
-const portfolio = require("../data/portfolio.json");
 const crawler = require("./crawler");
 
 const invalid = (val) => !val && val !== 0;
 
-async function getPortfolioReport() {
+async function getPortfolioReport(portfolio) {
   let totalMarketValue = 0;
   let totalDailyProfit = 0;
   const list = [];
@@ -15,8 +14,7 @@ async function getPortfolioReport() {
       list.push({
         name: realtimeData.fundName,
         code: item.code,
-        shares: item.shares,
-        marketValue: realtimeData.lastNetValue * item.shares,
+        marketValue: item.marketValue,
         dailyProfit: "--",
         change: "--",
         lastNetValue: "--",
@@ -30,7 +28,7 @@ async function getPortfolioReport() {
     // 2. 持仓金额 = 份额 * 最新估算单价
     // const marketValue = item.shares * estimatedPrice;
     // 2.持仓金额改为 用户实际数据
-    const marketValue = item.marketValue;
+    const marketValue = Number(item.marketValue);
 
     // 3. 当日盈利金额 = (份额 * 昨日净值) * 估算涨幅
     // const dailyProfit =
@@ -56,8 +54,12 @@ async function getPortfolioReport() {
 
   return {
     summary: {
-      totalValue: totalMarketValue.toFixed(2),
-      totalDailyProfit: totalDailyProfit.toFixed(2),
+      totalValue: totalMarketValue
+        ? Number(totalMarketValue).toFixed(2)
+        : totalMarketValue,
+      totalDailyProfit: totalDailyProfit
+        ? Number(totalDailyProfit).toFixed(2)
+        : totalDailyProfit,
     },
     funds: list,
     timestamp: new Date().toLocaleString("zh-CN", { hour12: false }),

@@ -1,5 +1,5 @@
 const { exec } = require("../db/mysql");
-const { genPassword } = require("../utils/cryp");
+const { genPassword } = require("../services/cryp");
 
 // 查询手机号和密码是否匹配，并返回用户信息（不含密码）
 const login = async (phone, password) => {

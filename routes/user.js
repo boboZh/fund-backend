@@ -10,10 +10,10 @@ router.post("/login", async (req, res, next) => {
     const user = await login(phone, password);
     if (user) {
       res.cookie("userId", user.user_id, {
-        maxAge: 1000 * 60 * 60 * 24 * 7, // 有效期24h*7
-        httpOnly: true, // 防止前端js读取cookie，放css
-        signed: true, // 对cookie签名，防止篡改
-        sameSite: "lax",
+        maxAge: 1000 * 60 * 60 * 24, // 有效期 24 小时
+        httpOnly: true, // 关键：防止前端 JS 读取 Cookie (防 XSS)
+        signed: true, // 关键：对 Cookie 进行签名 (防篡改)
+        sameSite: "lax", // 兼容性与安全性折中
       });
       res.json(new SuccessModel(user, "登录成功"));
       return;

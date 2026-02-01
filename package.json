@@ -22,11 +22,13 @@
     "web-streams-polyfill": "^4.2.0"
   },
   "devDependencies": {
+    "baidu-aip-sdk": "^4.16.16",
     "cookie-parser": "^1.4.7",
     "cross-env": "^10.1.0",
     "crypto": "^1.0.1",
     "dotenv": "^17.2.3",
     "http-errors": "^2.0.1",
+    "multer": "^2.0.2",
     "mysql2": "^3.16.2",
     "nodemon": "^3.1.11",
     "xss": "^1.0.15"
