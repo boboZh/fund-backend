@@ -29,8 +29,8 @@ app.use(cookieParser(COOKIE_SECRET));
 
 // 注意：这里决定了你的基础路径
 // 访问 login 接口将是 /api/user/login
-app.use("/api/user", userRouter);
-app.use("/api/fund", fundRouter);
+app.use("/user", userRouter);
+app.use("/fund", fundRouter);
 
 // --- 错误处理 ---
 
