@@ -7,11 +7,13 @@ const {
   getPortfolio,
   batchAddFund,
   ocrAnalyze,
+  deleteFund,
 } = require("../controller/fund");
 const { SuccessModel, ErrorModel } = require("../model/resModel");
 const multer = require("multer");
 const upload = multer({ dest: "uploads/" });
 
+// 获取基金持仓信息、昨日净值等
 router.get("/getInfoByCode/:code", async (req, res) => {
   const fundCode = req.params.code;
   try {
@@ -22,6 +24,7 @@ router.get("/getInfoByCode/:code", async (req, res) => {
   }
 });
 
+// 添加
 router.post("/add", authMiddleware, async (req, res) => {
   const { code, amount } = req.body;
   try {
@@ -32,6 +35,7 @@ router.post("/add", authMiddleware, async (req, res) => {
   }
 });
 
+// 批量导入
 router.post("/batchAdd", authMiddleware, async (req, res) => {
   const { funds } = req.body;
   try {
@@ -50,6 +54,7 @@ router.post("/batchAdd", authMiddleware, async (req, res) => {
   }
 });
 
+// 获取总持仓信息
 router.get("/portfolioReport", authMiddleware, async (req, res) => {
   try {
     const report = await getPortfolio(req.userId);
@@ -59,7 +64,8 @@ router.get("/portfolioReport", authMiddleware, async (req, res) => {
   }
 });
 
-(router.post(
+// 图片识别
+router.post(
   "/ocrAnalyze",
   authMiddleware,
   upload.single("file"),
@@ -68,11 +74,26 @@ router.get("/portfolioReport", authMiddleware, async (req, res) => {
 
     try {
       const data = await ocrAnalyze(req.file);
-      console.log("ocr-route: ", data);
       res.json(new SuccessModel(data));
     } catch (err) {
       res.status(500).json(new ErrorModel(err.message || "识别失败"));
     }
   },
-),
-  (module.exports = router));
+);
+
+router.post("/delete", authMiddleware, async (req, res) => {
+  console.log("delte: ", req.body);
+  if (!req.body.fundCode)
+    return res.status(400).json(new ErrorModel("缺失基金代码"));
+  try {
+    const succeed = await deleteFund(req.userId, req.body.fundCode);
+    if (succeed) {
+      res.json(new SuccessModel("删除成功"));
+    } else {
+      res.json(new ErrorModel("删除失败"));
+    }
+  } catch (err) {
+    res.status(500).json(new ErrorModel(err.message || "删除失败"));
+  }
+});
+module.exports = router;

@@ -15,7 +15,7 @@ const env = process.env.NODE_ENV || "dev";
 // 1. 处理跨域
 app.use(
   cors({
-    origin: env === "dev" ? "http://localhost:5173" : "http://112.126.27.148",
+    origin: env === "dev" ? "http://localhost:5173/" : "http://112.126.27.148",
     credentials: true,
   }),
 );

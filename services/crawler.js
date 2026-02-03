@@ -32,6 +32,7 @@ async function getFundHoldings(fundCode) {
     // );
 
     const holdings = [];
+
     // 定位持仓表格
     $("#position_shares table tr").each((i, el) => {
       if (i === 0) return;
@@ -40,13 +41,16 @@ async function getFundHoldings(fundCode) {
         const stockAnchor = $(cols[0]).find("a");
         const stockName = stockAnchor.text().trim();
         const stockHref = stockAnchor.attr("href") || "";
-        const codeMatch = stockHref.match(/\d{6}/);
+        const allStockRegex =
+          /\b([A-Z]{1,5}(\.[A-Z]{1,2})?|(\d{5,6})(\.(HK|SH|SZ|BJ))?)\b/g;
+        const codeMatch = stockHref.match(allStockRegex);
 
         if (codeMatch && stockName) {
           const stockCodeRaw = codeMatch[0];
           const percentage = parseFloat($(cols[1]).text().replace("%", ""));
           const prefix =
-            stockCodeRaw.startsWith("6") || stockCodeRaw.startsWith("688")
+            stockCodeRaw.match(/\d{6}/) &&
+            (stockCodeRaw.startsWith("6") || stockCodeRaw.startsWith("688"))
               ? "sh"
               : "sz";
 
@@ -86,6 +90,7 @@ async function getStocksRealtime(stockCodes) {
     const lines = data.split("\n");
     const stockMap = {};
 
+    console.log("lines: ", lines);
     lines.forEach((line) => {
       const match = line.match(/hq_str_(s[hz]\d+)=\"(.*)\"/);
       if (match) {

@@ -1,8 +1,60 @@
 [
   {
-    "code": "022084",
-    "name": "华安中证有色金属",
-    "marketValue": 8000
+    "code": "006555",
+    "name": "浦银安盛全球智能科技",
+    "marketValue": 8000,
+    "holdings": [
+      {
+        "name": "英伟达",
+        "code": "NVDA",
+        "weight": ""
+      },
+      {
+        "name": "",
+        "code": "",
+        "weight": ""
+      },
+      {
+        "name": "",
+        "code": "",
+        "weight": ""
+      },
+      {
+        "name": "",
+        "code": "",
+        "weight": ""
+      },
+      {
+        "name": "",
+        "code": "",
+        "weight": ""
+      },
+      {
+        "name": "",
+        "code": "",
+        "weight": ""
+      },
+      {
+        "name": "",
+        "code": "",
+        "weight": ""
+      },
+      {
+        "name": "",
+        "code": "",
+        "weight": ""
+      },
+      {
+        "name": "",
+        "code": "",
+        "weight": ""
+      },
+      {
+        "name": "",
+        "code": "",
+        "weight": ""
+      }
+    ]
   },
   {
     "code": "007911",
