@@ -1,5 +1,7 @@
 const { exec } = require("../db/mysql");
 const { genPassword } = require("../services/cryp");
+const { v4: uuidv4 } = require("uuid");
+const redisClient = require("../db/redis");
 
 // 查询手机号和密码是否匹配，并返回用户信息（不含密码）
 const login = async (phone, password) => {
@@ -17,11 +19,23 @@ WHERE u.phone = ? AND u.password = ?;`;
   password = genPassword(password);
   const rows = await exec(sql, [phone, password]);
   const user = rows[0];
+  if (user) {
+    const sessionId = uuidv4();
+    await redisClient.set(`session:${user.user_id}`, sessionId, {
+      EX: 24 * 60 * 60,
+    });
+    user.sessionId = sessionId;
+  }
   if (user && user.permissions) {
     user.permissions =
       user.permissions === "*" ? ["*"] : user.permissions.split(",");
   }
   return user;
+};
+
+// 退出登录
+const logout = async (userId) => {
+  await redisClient.del(`session:${userId}`);
 };
 
 // 用户注册
@@ -47,4 +61,5 @@ module.exports = {
   login,
   register,
   getUserList,
+  logout,
 };

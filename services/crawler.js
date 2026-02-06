@@ -90,7 +90,6 @@ async function getStocksRealtime(stockCodes) {
     const lines = data.split("\n");
     const stockMap = {};
 
-    console.log("lines: ", lines);
     lines.forEach((line) => {
       const match = line.match(/hq_str_(s[hz]\d+)=\"(.*)\"/);
       if (match) {

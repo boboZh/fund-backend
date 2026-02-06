@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "cross-env NODE_ENV=dev nodemon --delay 2 app.js",
+    "dev": "cross-env NODE_ENV=dev node --watch app.js",
     "prod": "cross-env NODE_ENV=production pm2 start app.js",
     "db:init:dev": "cross-env NODE_ENV=dev node scripts/initDb.js",
     "db:init:prod": "cross-env NODE_ENV=production node scripts/initDb.js"
@@ -27,10 +27,14 @@
     "cross-env": "^10.1.0",
     "crypto": "^1.0.1",
     "dotenv": "^17.2.3",
+    "eslint": "^9.39.2",
     "http-errors": "^2.0.1",
     "multer": "^2.0.2",
     "mysql2": "^3.16.2",
     "nodemon": "^3.1.11",
+    "openai": "^6.18.0",
+    "redis": "^5.10.0",
+    "uuid": "^13.0.0",
     "xss": "^1.0.15"
   }
 }

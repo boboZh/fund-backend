@@ -5,6 +5,7 @@ const fundMapService = require("./services/fundMap");
 const createError = require("http-errors");
 const userRouter = require("./routes/user");
 const fundRouter = require("./routes/fund");
+const aiRouter = require("./routes/ai");
 
 const app = express();
 
@@ -33,6 +34,7 @@ app.use(cookieParser(COOKIE_SECRET));
 // 访问 login 接口将是 /user/login
 app.use("/api/user", userRouter);
 app.use("/api/fund", fundRouter);
+app.use("/api/ai", aiRouter);
 
 // --- 错误处理 ---
 
