@@ -1,4 +1,5 @@
 const { ErrorModel } = require("../model/resModel");
+const redisClient = require("../db/redis");
 
 // 权限校验中间件
 const authMiddleware = async (req, res, next) => {
@@ -11,7 +12,7 @@ const authMiddleware = async (req, res, next) => {
     return res.status(401).json(new ErrorModel("请先登录"));
   }
   try {
-    const lastestSessionId = await redistClient.get(`session:${userId}`);
+    const lastestSessionId = await redisClient.get(`session:${userId}`);
     if (!lastestSessionId) {
       return res.status(401).json(new ErrorModel("登录已过期，请重新登录"));
     }
