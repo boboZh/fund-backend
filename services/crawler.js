@@ -68,7 +68,7 @@ async function getFundHoldings(fundCode) {
       fundName,
     };
   } catch (error) {
-    console.error("获取持仓失败:", error.message);
+    console.error("获取基金持仓失败:", error.message);
     return {};
   }
 }

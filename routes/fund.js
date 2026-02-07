@@ -8,6 +8,7 @@ const {
   batchAddFund,
   ocrAnalyze,
   deleteFund,
+  setFundAlert,
 } = require("../controller/fund");
 const { SuccessModel, ErrorModel } = require("../model/resModel");
 const multer = require("multer");
@@ -81,6 +82,7 @@ router.post(
   },
 );
 
+// 删除持仓
 router.post("/delete", authMiddleware, async (req, res) => {
   console.log("delte: ", req.body);
   if (!req.body.fundCode)
@@ -94,6 +96,24 @@ router.post("/delete", authMiddleware, async (req, res) => {
     }
   } catch (err) {
     res.status(500).json(new ErrorModel(err.message || "删除失败"));
+  }
+});
+
+// 设置预警值
+router.post("/setAlert", authMiddleware, async (req, res) => {
+  const { fundCode, applyAll, targetProfitRate, stopLossRate } = req.body;
+  const userId = req.userId;
+  try {
+    await setFundAlert(
+      fundCode,
+      targetProfitRate,
+      stopLossRate,
+      applyAll,
+      userId,
+    );
+    res.json(new SuccessModel("设置成功"));
+  } catch (err) {
+    res.status(500).json(new ErrorModel(err.message || "服务器内部错误"));
   }
 });
 module.exports = router;

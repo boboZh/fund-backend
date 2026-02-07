@@ -12,9 +12,8 @@ async function getPortfolioReport(portfolio) {
     if (!realtimeData) continue;
     if (invalid(realtimeData.estimatePercent)) {
       list.push({
+        ...item,
         name: realtimeData.fundName,
-        code: item.code,
-        marketValue: item.marketValue,
         dailyProfit: "--",
         change: "--",
         lastNetValue: "--",
@@ -28,7 +27,7 @@ async function getPortfolioReport(portfolio) {
     // 2. 持仓金额 = 份额 * 最新估算单价
     // const marketValue = item.shares * estimatedPrice;
     // 2.持仓金额改为 用户实际数据
-    const marketValue = Number(item.marketValue);
+    const amount = Number(item.amount);
 
     // 3. 当日盈利金额 = (份额 * 昨日净值) * 估算涨幅
     // const dailyProfit =
@@ -36,16 +35,16 @@ async function getPortfolioReport(portfolio) {
     //   realtimeData.lastNetValue *
     //   (realtimeData.estimatePercent / 100);
 
-    const dailyProfit = marketValue * (realtimeData.estimatePercent / 100);
+    const dailyProfit = amount * (realtimeData.estimatePercent / 100);
 
-    totalMarketValue += marketValue;
+    totalMarketValue += amount;
     totalDailyProfit += dailyProfit;
 
     list.push({
+      ...item,
       name: realtimeData.fundName,
       code: item.code,
       shares: item.shares,
-      marketValue: marketValue.toFixed(2),
       dailyProfit: dailyProfit.toFixed(2),
       change: realtimeData.estimatePercent + "%",
       lastNetValue: realtimeData.lastNetValue,

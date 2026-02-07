@@ -91,7 +91,7 @@ const batchDeleteFund = async (userId, fundCodes) => {
  */
 const getPortfolio = async (userId) => {
   const sql = `
-        SELECT fund_code, amount, updated_at 
+        SELECT fund_code, amount, target_profit_rate, stop_loss_rate, updated_at 
         FROM portfolios 
         WHERE user_id = ? 
         ORDER BY updated_at DESC
@@ -102,9 +102,13 @@ const getPortfolio = async (userId) => {
    */
   const report = await getPortfolioReport(
     list.map((item) => {
+      const { target_profit_rate, stop_loss_rate, ...rest } = item;
       return {
+        ...item,
         code: item.fund_code,
-        marketValue: item.amount,
+        amount: item.amount,
+        targetProfitRate: target_profit_rate,
+        stopLossRate: stop_loss_rate,
       };
     }),
   );
@@ -121,6 +125,40 @@ const ocrAnalyze = async (file) => {
   return data;
 };
 
+// 设置预警信息
+const setFundAlert = async (
+  fundCode,
+  targetProfitRate,
+  stopLossRate,
+  applyAll = false,
+  userId,
+) => {
+  let result;
+  if (applyAll) {
+    // 应用到全部
+    const sql = `
+        UPDATE portfolios 
+        SET target_profit_rate = ?, stop_loss_rate = ? 
+        WHERE user_id = ?
+      `;
+    result = await exec(sql, [targetProfitRate, stopLossRate]);
+  } else {
+    // 仅设置单项
+    const sql = `
+        UPDATE portfolios 
+        SET target_profit_rate = ?, stop_loss_rate = ? 
+        WHERE user_id = ? AND fund_code = ?
+      `;
+    result = await exec(sql, [
+      targetProfitRate,
+      stopLossRate,
+      userId,
+      fundCode,
+    ]);
+  }
+  return result.affectedRows;
+};
+
 module.exports = {
   getFundInfoByCode,
   addFund,
@@ -131,4 +169,5 @@ module.exports = {
   modifyFundAmount,
   batchModifyFundAmount,
   ocrAnalyze,
+  setFundAlert,
 };

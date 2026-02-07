@@ -1,11 +1,108 @@
 const { OpenAI } = require("openai");
+const { getPortfolio, getFundInfoByCode } = require("../controller/fund");
 
 const client = new OpenAI({
   apiKey: process.env.AI_API_KEY,
   baseURL: "https://api.deepseek.com/v1",
 });
 
-async function getChatResponse(userInput, fundData, userNickname) {
+const tools = [
+  {
+    type: "function",
+    function: {
+      name: "get_fund_valuation",
+      description: "获取特定基金代码的实时估值涨跌幅",
+      parameters: {
+        type: "object",
+        properties: {
+          code: {
+            type: "string",
+            description: "基金代码",
+          },
+        },
+        required: ["code"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "set_fund_alert",
+      description: "为特定基金设置止盈或止损预警点",
+      parameters: {
+        type: "object",
+        properties: {
+          code: {
+            type: "string",
+            description: "基金代码",
+          },
+          threshold: { type: "number", description: "预警比例，比如5.0代表5%" },
+          type: {
+            type: "string",
+            enum: ["profit", "loss"],
+            description: "预警类型：止盈或止损",
+          },
+        },
+        required: ["code", "threshold", "type"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_user_portfolio",
+      description: "获取当前登录用户的所有基金持仓明细，包括基金代码和持仓金额",
+      parameters: {
+        type: "object",
+        properties: {}, // 无需参数，服务端从session/cookie拿userId
+      },
+    },
+  },
+];
+const actions = {
+  get_user_portfolio: async (args, userId) => {
+    const summary = await getPortfolio(userId);
+    return JSON.stringify({
+      status: "success",
+      data: summary.funds,
+      info: "这是用户当前的最新持仓数据",
+    });
+  },
+  get_fund_valuation: async (args, userId) => {
+    const info = await getFundInfoByCode(args.code);
+    return JSON.stringify(info);
+  },
+};
+
+async function getChatResponse(userInput, userId) {
+  const response = await client.chat.completions.create({
+    model: "deepseek-chat",
+    messages: [
+      {
+        role: "system",
+        content: `你是一名理财Agent，如果需要用户信息，请调用工具`,
+      },
+      {
+        role: "user",
+        content: userInput,
+      },
+    ],
+    stream: true,
+    tools: tools,
+  });
+  console.log("AI response received: ", response);
+
+  const responseMessage = response.choices[0].message;
+  const toolCalls = responseMessage.tool_calls;
+
+  if (toolCalls) {
+  } else {
+    return response;
+  }
+}
+
+// 2.0 问答交互，nodejs端要传入大量的持仓数据，浪费token
+async function getChatResponse_2(userInput, fundData, userNickname) {
   const systemContext = `你是一位专业的基金投资顾问，
       当前用户昵称为${userNickname}。
       这是用户的持仓数据：${JSON.stringify(fundData)}。
@@ -24,9 +121,12 @@ async function getChatResponse(userInput, fundData, userNickname) {
     stream: true,
   });
 
+  console.log("ai response: ", response);
+
   return response;
 }
 
+// 初版：单向的喂数据回答分析
 async function getPortfolioAdvice(fundData, userNickname) {
   const response = await client.chat.completions.create({
     model: "deepseek-chat",
@@ -47,12 +147,13 @@ async function getPortfolioAdvice(fundData, userNickname) {
     stream: true,
   });
 
-  console.log("AI response received: ", response);
-
   return response;
 }
 
 module.exports = {
   getPortfolioAdvice,
   getChatResponse,
+  client,
+  tools,
+  actions,
 };
