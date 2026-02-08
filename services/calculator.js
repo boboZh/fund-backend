@@ -2,49 +2,45 @@ const crawler = require("./crawler");
 
 const invalid = (val) => !val && val !== 0;
 
+/**
+ * 估值及持仓盈亏点数计算规则
+ * @param {*} portfolio
+ * @returns
+ */
+
 async function getPortfolioReport(portfolio) {
-  let totalMarketValue = 0;
-  let totalDailyProfit = 0;
+  let totalAmount = 0; // 所有持仓金额
+  let totalDailyProfit = 0; // 今日所有收益
+
   const list = [];
 
   for (const item of portfolio) {
-    const realtimeData = await getEstimate(item.code);
+    const realtimeData = await getEstimate(item.fundCode);
     if (!realtimeData) continue;
+    const amount = parseFloat(item.amount);
+    totalAmount += amount;
+
     if (invalid(realtimeData.estimatePercent)) {
       list.push({
         ...item,
-        name: realtimeData.fundName,
+        fundName: realtimeData.fundName,
         dailyProfit: "--",
         change: "--",
         lastNetValue: "--",
       });
       continue;
     }
-    // 1. 计算当日估值后的单价
-    const estimatedPrice =
-      realtimeData.lastNetValue * (1 + realtimeData.estimatePercent / 100);
 
-    // 2. 持仓金额 = 份额 * 最新估算单价
-    // const marketValue = item.shares * estimatedPrice;
-    // 2.持仓金额改为 用户实际数据
-    const amount = Number(item.amount);
+    console.log("ampunt: ", realtimeData.estimatePercent, item.amount);
 
-    // 3. 当日盈利金额 = (份额 * 昨日净值) * 估算涨幅
-    // const dailyProfit =
-    //   item.shares *
-    //   realtimeData.lastNetValue *
-    //   (realtimeData.estimatePercent / 100);
+    const estimatePercent = parseFloat(realtimeData.estimatePercent);
+    const dailyProfit = amount * (estimatePercent / 100);
 
-    const dailyProfit = amount * (realtimeData.estimatePercent / 100);
-
-    totalMarketValue += amount;
     totalDailyProfit += dailyProfit;
 
     list.push({
       ...item,
-      name: realtimeData.fundName,
-      code: item.code,
-      shares: item.shares,
+      fundName: realtimeData.fundName,
       dailyProfit: dailyProfit.toFixed(2),
       change: realtimeData.estimatePercent + "%",
       lastNetValue: realtimeData.lastNetValue,
@@ -52,14 +48,7 @@ async function getPortfolioReport(portfolio) {
   }
 
   return {
-    summary: {
-      totalValue: totalMarketValue
-        ? Number(totalMarketValue).toFixed(2)
-        : totalMarketValue,
-      totalDailyProfit: totalDailyProfit
-        ? Number(totalDailyProfit).toFixed(2)
-        : totalDailyProfit,
-    },
+    summary: { totalAmount, totalDailyProfit },
     funds: list,
     timestamp: new Date().toLocaleString("zh-CN", { hour12: false }),
   };
@@ -69,6 +58,7 @@ async function getEstimate(fundCode) {
   const { holdings, lastNetValue, fundName } =
     await crawler.getFundHoldings(fundCode);
 
+  // 没有拿到持仓股信息
   if (holdings.length === 0) {
     return {
       fundCode,
@@ -82,18 +72,18 @@ async function getEstimate(fundCode) {
     };
   }
 
-  const stockCodes = holdings.map((h) => h.code);
+  const stockCodes = holdings.map((h) => h.stockCode);
   const stockQuotes = await crawler.getStocksRealtime(stockCodes);
 
   let totalWeight = 0;
   let estimatedChange = 0;
 
   const details = holdings.map((stock) => {
-    const change = stockQuotes[stock.code] || 0;
+    const change = stockQuotes[stock.stockCode] || 0;
     totalWeight += stock.weight;
     estimatedChange += change * stock.weight;
     return {
-      name: stock.name,
+      stockName: stock.name,
       weight: stock.weight.toFixed(2) + "%",
       realtimeChange: change.toFixed(2) + "%",
     };

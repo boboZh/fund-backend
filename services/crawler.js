@@ -17,7 +17,6 @@ async function getFundHoldings(fundCode) {
     // 使用 GBK 解码
     const html = iconv.decode(Buffer.from(response.data), "utf-8");
     const $ = cheerio.load(html);
-
     // 基金名称
     const fundName = $(".fundDetail-header .fundDetail-tit div")
       .html()
@@ -55,8 +54,8 @@ async function getFundHoldings(fundCode) {
               : "sz";
 
           holdings.push({
-            name: stockName,
-            code: prefix + stockCodeRaw,
+            stockName,
+            stockCode: prefix + stockCodeRaw,
             weight: percentage,
           });
         }

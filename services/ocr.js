@@ -12,7 +12,7 @@ const client = new AipOcrClient(APP_ID, API_KEY, SECRET_KEY);
 /**
  * 解析支付宝截图
  */
-async function parseScreenshot(imagePath) {
+async function parseImgInfo(imagePath) {
   const image = fs.readFileSync(imagePath).toString("base64");
 
   try {
@@ -218,4 +218,4 @@ function deduplicate(arr) {
   }
   return Array.from(map.values());
 }
-module.exports = { parseScreenshot };
+module.exports = { parseImgInfo };

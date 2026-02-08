@@ -1,7 +1,7 @@
 const { exec } = require("../db/mysql");
 const { getFundHoldings } = require("../services/crawler");
 const { getPortfolioReport } = require("../services/calculator");
-const { parseScreenshot } = require("../services/ocr");
+const { parseImgInfo } = require("../services/ocr");
 const fs = require("fs");
 
 // 根据基金代码获取基金信息
@@ -100,25 +100,15 @@ const getPortfolio = async (userId) => {
   /**
    *
    */
-  const report = await getPortfolioReport(
-    list.map((item) => {
-      const { target_profit_rate, stop_loss_rate, ...rest } = item;
-      return {
-        ...item,
-        code: item.fund_code,
-        amount: item.amount,
-        targetProfitRate: target_profit_rate,
-        stopLossRate: stop_loss_rate,
-      };
-    }),
-  );
+  const report = await getPortfolioReport(list);
 
   return report;
 };
 
 // 图片识别
 const ocrAnalyze = async (file) => {
-  const data = await parseScreenshot(file.path);
+  // 解析图片信息
+  const data = await parseImgInfo(file.path);
   // 清理临时文件
   fs.unlinkSync(file.path);
 

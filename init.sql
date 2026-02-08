@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS portfolios (
     user_id INT NOT NULL,           -- 关联用户的唯一ID
     fund_code VARCHAR(10) NOT NULL, -- 基金代码
     amount DECIMAL(15, 2) NOT NULL, -- 持仓金额
+    target_profit_rate DECIMAL(5,2) DEFAULT NULL COMMENT '止盈触发涨幅（%）',
+    stop_loss_rate DECIMAL(5,2) DEFAULT NULL COMMENT '止损触发跌幅（%）',
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     
     -- 核心：关联外键。当用户表里的 user_id 被删除时，该用户的所有持仓也会自动删除 (CASCADE)
