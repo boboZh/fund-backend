@@ -31,8 +31,6 @@ async function getPortfolioReport(portfolio) {
       continue;
     }
 
-    console.log("ampunt: ", realtimeData.estimatePercent, item.amount);
-
     const estimatePercent = parseFloat(realtimeData.estimatePercent);
     const dailyProfit = amount * (estimatePercent / 100);
 
@@ -48,7 +46,10 @@ async function getPortfolioReport(portfolio) {
   }
 
   return {
-    summary: { totalAmount, totalDailyProfit },
+    summary: {
+      totalAmount: totalAmount.toFixed(2),
+      totalDailyProfit: totalDailyProfit.toFixed(2),
+    },
     funds: list,
     timestamp: new Date().toLocaleString("zh-CN", { hour12: false }),
   };

@@ -10,7 +10,7 @@ router.post("/login", async (req, res, next) => {
   try {
     const user = await login(phone, password);
     if (user) {
-      res.cookie("userId", user.user_id, {
+      res.cookie("userId", user.userId, {
         // maxAge: 1000 * 60 * 60 * 24, // 有效期 24 小时  redis 已经设置过期时间，这里不需要再设置
         httpOnly: true, // 关键：防止前端 JS 读取 Cookie (防 XSS)
         signed: true, // 关键：对 Cookie 进行签名 (防篡改)

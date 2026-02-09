@@ -8,6 +8,7 @@ const {
 } = require("../services/ai");
 const { ErrorModel } = require("../model/resModel");
 const authMiddleware = require("../middleware/auth");
+const { writeStatus } = require("../utils/tools");
 
 router.post("/analyze-portfolio", authMiddleware, async (req, res) => {
   res.setHeader("Content-Type", "text/event-stream");
@@ -47,7 +48,8 @@ router.post("/chat", authMiddleware, async (req, res) => {
   const messages = [
     {
       role: "system",
-      content: "你是一个理财助手。如果需要用户信息，请调用工具",
+      content:
+        "你是一个高效的投资助手。当用户的问题包含多个指令时，请务必在单词响应中输出所有必要的tool_calls",
     },
     {
       role: "user",
@@ -60,58 +62,95 @@ router.post("/chat", authMiddleware, async (req, res) => {
     let isFirstChat = true;
 
     while (isFirstChat || isToolCall) {
-      let toolCallId = "";
-      let fullToolCallJson = "";
-      let toolFunctionName = "";
+      const toolCallMap = {}; // 每轮对话结束后，清空toolCallMap
       const stream = await client.chat.completions.create({
         model: "deepseek-chat",
         messages,
         tools,
         stream: true,
+        tool_choice: "auto",
       });
       isToolCall = false;
       isFirstChat = false;
 
       for await (const chunk of stream) {
         const delta = chunk.choices[0]?.delta;
-        console.log("delta: ", delta);
+        if (delta.tool_calls) {
+          console.log("delta: ", delta.tool_calls);
+        }
         if (delta.tool_calls) {
           isToolCall = true;
-          const tc = delta.tool_calls[0];
-          if (tc.id) toolCallId = tc.id;
-          if (tc.function?.name) toolFunctionName = tc.function.name;
-          if (tc.function?.arguments) fullToolCallJson += tc.function.arguments;
-          res.write("[THINKING_SIGNAL]");
+          for (const tc of delta.tool_calls) {
+            if (!toolCallMap[tc.index]) {
+              toolCallMap[tc.index] = {
+                json: "",
+              };
+            }
+            if (tc?.id) {
+              toolCallMap[tc.index].id = tc.id;
+            }
+            if (tc.function?.name) {
+              toolCallMap[tc.index].functionName = tc.function.name;
+            }
+            if (tc.function?.arguments) {
+              toolCallMap[tc.index].json += tc.function.arguments;
+            }
+          }
         } else if (delta.content) {
           res.write(delta.content);
         }
       }
       if (isToolCall) {
-        const functionArgs = JSON.parse(fullToolCallJson || "{}");
-        console.log(`执行工具：${toolFunctionName}`, functionArgs);
+        console.log("fullToolCall：", toolCallMap);
 
-        const functionResponse = await actions[toolFunctionName](
-          functionArgs,
-          userId,
+        const _toolCalls = Object.values(toolCallMap);
+
+        const runTask = async (taskItem, index) => {
+          const { json, functionName } = taskItem;
+          const functionArgs = JSON.parse(json || "{}");
+          const { func, description, msgModel } = actions[functionName];
+          const taskId = `task_${Date.now()}_${index}`;
+          const _desc =
+            typeof description === "function"
+              ? description(functionArgs)
+              : description;
+          res.write(`[S:${taskId}:loading:${_desc}]`);
+          try {
+            const result = await func(functionArgs, userId);
+            res.write(`[S:${taskId}:success:${msgModel(result)}]`);
+            return result;
+          } catch (err) {
+            res.write(`[S:${taskId}:error:${description}出错]`);
+            throw err;
+          }
+        };
+
+        // 同时处理多个工具调用
+        const dataList = await Promise.all(
+          _toolCalls.map((item, index) => runTask(item, index)),
         );
-        console.log("functionResponse: ", functionResponse);
+
         messages.push({
           role: "assistant",
-          tool_calls: [
-            {
-              id: toolCallId,
+          tool_calls: _toolCalls.map((item) => {
+            const { id, functionName, json } = item;
+            return {
+              id,
               type: "function",
               function: {
-                name: toolFunctionName,
-                arguments: fullToolCallJson,
+                name: functionName,
+                arguments: json,
               },
-            },
-          ],
+            };
+          }),
         });
-        messages.push({
-          role: "tool",
-          tool_call_id: toolCallId,
-          content: functionResponse,
+        dataList.map((item, index) => {
+          const { id } = _toolCalls[index];
+          messages.push({
+            role: "tool",
+            tool_call_id: id,
+            content: item,
+          });
         });
       } else {
         break;

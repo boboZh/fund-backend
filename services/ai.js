@@ -9,6 +9,7 @@ const client = new OpenAI({
 const tools = [
   {
     type: "function",
+    strict: true, // 对函数调用强制执行严格模式，保证模型生成的参数完全符合你的 JSON Schema
     function: {
       name: "get_fund_valuation",
       description: "获取特定基金代码的实时估值涨跌幅",
@@ -26,6 +27,7 @@ const tools = [
   },
   {
     type: "function",
+    strict: true,
     function: {
       name: "set_fund_alert",
       description: "为特定基金设置止盈或止损预警点",
@@ -49,6 +51,7 @@ const tools = [
   },
   {
     type: "function",
+    strict: true,
     function: {
       name: "get_user_portfolio",
       description: "获取当前登录用户的所有基金持仓明细，包括基金代码和持仓金额",
@@ -60,17 +63,31 @@ const tools = [
   },
 ];
 const actions = {
-  get_user_portfolio: async (args, userId) => {
-    const summary = await getPortfolio(userId);
-    return JSON.stringify({
-      status: "success",
-      data: summary.funds,
-      info: "这是用户当前的最新持仓数据",
-    });
+  get_user_portfolio: {
+    func: async (args, userId) => {
+      const summary = await getPortfolio(userId);
+      return JSON.stringify({
+        status: "success",
+        data: summary.funds,
+        info: "这是用户当前的最新持仓数据",
+      });
+    },
+    description: "调取您的持仓数据",
+    msgModel: (res) => {
+      const { data } = JSON.parse(res);
+      return `调取您的持仓数据成功，共查到您当前持有${data.length}只基金`;
+    },
   },
-  get_fund_valuation: async (args, userId) => {
-    const info = await getFundInfoByCode(args.code);
-    return JSON.stringify(info);
+  get_fund_valuation: {
+    func: async (args, userId) => {
+      const info = await getFundInfoByCode(args.code);
+      return JSON.stringify(info);
+    },
+    description: (args) => `正在搜索基金${args.code}的详细信息...`,
+    msgModel: (res) => {
+      const { fundName, fundCode } = JSON.parse(res);
+      return `查询基金${fundName}(${fundCode})的信息`;
+    },
   },
 };
 

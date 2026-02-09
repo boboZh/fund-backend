@@ -65,6 +65,7 @@ async function getFundHoldings(fundCode) {
       holdings,
       lastNetValue,
       fundName,
+      fundCode,
     };
   } catch (error) {
     console.error("获取基金持仓失败:", error.message);
