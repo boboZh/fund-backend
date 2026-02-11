@@ -13,7 +13,7 @@ const { writeStatus } = require("../utils/tools");
 router.post("/analyze-portfolio", authMiddleware, async (req, res) => {
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-chache");
-  res.setHeader("Connnection", "keep-alive");
+  res.setHeader("Connection", "keep-alive");
   try {
     const { funds, userNickname } = req.body;
     const stream = await getPortfolioAdvice(funds, userNickname);
@@ -127,7 +127,7 @@ router.post("/chat", authMiddleware, async (req, res) => {
 
         // 同时处理多个工具调用
         const dataList = await Promise.all(
-          _toolCalls.map((item, index) => runTask(item, index)),
+          _toolCalls.map((item, index) => runTask(item, index))
         );
 
         messages.push({

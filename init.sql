@@ -48,3 +48,13 @@ CREATE TABLE IF NOT EXISTS portfolios (
     -- 索引优化：确保同一个用户对同一个基金只有一条记录
     UNIQUE KEY `unique_user_fund` (`user_id`, `fund_code`)
 ) ENGINE=InnoDB;
+
+-- 会话表：记录用户开启了多少个对话
+CREATE TABLE IF NOT EXISTS chat_sessions (
+    id VARCHAR(36) PRIMARY KEY, -- 使用 UUID
+    user_id INT NOT NULL,
+    title VARCHAR(255) DEFAULT '新对话', -- 例如“分析广发纳斯达克”
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+) ENGINE=InnoDB;
