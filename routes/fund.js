@@ -43,9 +43,12 @@ router.post("/batchAdd", authMiddleware, async (req, res) => {
     const result = await batchAddFund(
       req.userId,
       funds.map((item) => {
+        const { fundName, fundCode, amount, ...rest } = item;
         return {
-          ...item,
-          amount: item.amount || 0,
+          ...rest,
+          amount: amount || 0,
+          name: fundName,
+          code: fundCode,
         };
       }),
     );

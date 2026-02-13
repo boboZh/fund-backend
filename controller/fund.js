@@ -112,7 +112,14 @@ const ocrAnalyze = async (file) => {
   // 清理临时文件
   fs.unlinkSync(file.path);
 
-  return data;
+  return data.map((item) => {
+    const { name, code, ...rest } = item;
+    return {
+      ...rest,
+      fundName: name,
+      fundCode: code,
+    };
+  });
 };
 
 // 设置预警信息

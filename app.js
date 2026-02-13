@@ -36,12 +36,6 @@ app.use("/api/user", userRouter);
 app.use("/api/fund", fundRouter);
 app.use("/api/ai", aiRouter);
 
-
-app.use((req, res, next) =>{
-	console.log('--req-path--', req.path);
-	next();
-})
-
 // --- 错误处理 ---
 
 app.use((req, res, next) => {

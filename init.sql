@@ -49,12 +49,42 @@ CREATE TABLE IF NOT EXISTS portfolios (
     UNIQUE KEY `unique_user_fund` (`user_id`, `fund_code`)
 ) ENGINE=InnoDB;
 
--- 会话表：记录用户开启了多少个对话
+-- 会话表：管理不同的聊天窗口
 CREATE TABLE IF NOT EXISTS chat_sessions (
-    id VARCHAR(36) PRIMARY KEY, -- 使用 UUID
-    user_id INT NOT NULL,
-    title VARCHAR(255) DEFAULT '新对话', -- 例如“分析广发纳斯达克”
+    session_id VARCHAR(50) PRIMARY KEY COMMENT '会话唯一ID，建议用UUID',
+    user_id INT NOT NULL COMMENT '所属用户ID',
+    title VARCHAR(100) DEFAULT '新对话' COMMENT '会话标题',
+    is_pinned BOOLEAN DEFAULT FALSE COMMENT '是否置顶',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
-) ENGINE=InnoDB;
+    
+    CONSTRAINT fk_session_user FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 聊天记录表：存储具体的对话内容
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    session_id VARCHAR(50) NOT NULL COMMENT '所属会话ID',
+    user_id INT NOT NULL COMMENT '用户ID(冗余字段方便查询)',
+    role ENUM('user', 'assistant', 'tool') NOT NULL COMMENT '角色',
+    -- 当role为tool时，存储工具调用返回的原始结果字符串
+    -- 当role为assistant|user，content是文本内容
+    content TEXT NOT NULL,
+    -- 存储assistant发出的工具调用指令
+    -- 包含id、type、function{name, arguments}
+    tool_calls JSON DEFAULT NULL,
+    -- 当role为tool时，必须关联它是响应哪一个call_id
+    tool_call_id VARCHAR(50) DEFAULT NULL COMMENT '工具调用id',
+    
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    -- 索引优化
+    INDEX idx_session_id (session_id),
+    INDEX idx_user (user_id),
+
+    -- 外键约束
+    -- 关联会话，会话删了，消息跟着删
+    CONSTRAINT fk_msg_session FOREIGN KEY (session_id) REFERENCES chat_sessions(session_id) ON DELETE CASCADE,
+    -- 关联用户，用户删了，消息跟着删
+    CONSTRAINT fk_msg_user FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
