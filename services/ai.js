@@ -1,5 +1,9 @@
 const { OpenAI } = require("openai");
-const { getPortfolio, getFundInfoByCode } = require("../controller/fund");
+const {
+  getPortfolio,
+  getFundInfoByCode,
+  setFundAlert,
+} = require("../controller/fund");
 
 const client = new OpenAI({
   apiKey: process.env.AI_API_KEY,
@@ -34,15 +38,21 @@ const tools = [
       parameters: {
         type: "object",
         properties: {
-          code: {
+          fundCode: {
             type: "string",
             description: "基金代码",
           },
-          threshold: { type: "number", description: "预警比例，比如5.0代表5%" },
-          type: {
-            type: "string",
-            enum: ["profit", "loss"],
-            description: "预警类型：止盈或止损",
+          targetProfitRate: {
+            type: "number",
+            description: "止盈点，如5.0代表5%",
+          },
+          stopLossRate: {
+            type: "number",
+            description: "止损点，如5.0代表5%",
+          },
+          applyAll: {
+            type: "boolean",
+            descript: "是否应用到所有持仓基金",
           },
         },
         required: ["code", "threshold", "type"],
@@ -87,6 +97,41 @@ const actions = {
     msgModel: (res) => {
       const { fundName, fundCode } = JSON.parse(res);
       return `查询基金${fundName}(${fundCode})的信息`;
+    },
+  },
+  set_fund_alert: {
+    func: async (args, userId) => {
+      console.log("args: ", args);
+
+      try {
+        const { fundCode, targetProfitRate, stopLossRate, applyAll } = args;
+        await setFundAlert(
+          fundCode,
+          targetProfitRate,
+          stopLossRate,
+          applyAll,
+          userId,
+        );
+        return JSON.stringify({
+          status: "success",
+          info: "设置成功",
+          args,
+        });
+      } catch (err) {
+        console.log("setFundAlertErrorFromAiService: ", err);
+        return JSON.striongify({
+          status: "failed",
+          info: "设置失败，请稍后重试",
+        });
+      }
+    },
+    description: (args) =>
+      `正在设置${args.fundCode}${args.applyAll ? "及您持仓中其它基金" : ""}的止盈止损预警信息...`,
+    msgModel: (res) => {
+      const {
+        args: { fundCode, applyAll },
+      } = JSON.parse(res);
+      return `设置基金(${fundCode})${applyAll ? "及您持仓中其它基金" : ""}的止盈止损预警信息`;
     },
   },
 };

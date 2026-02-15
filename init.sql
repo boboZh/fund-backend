@@ -88,3 +88,20 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     -- 关联用户，用户删了，消息跟着删
     CONSTRAINT fk_msg_user FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+-- 展示在ui层面的聊天记录
+CREATE TABLE IF NOT EXISTS chat_ui_messages (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  session_id VARCHAR(50) NOT NULL COMMENT '所属会话ID',
+  user_id INT NOT NULL COMMENT '用户ID(冗余字段方便查询)',
+  role ENUM('user', 'ai') NOT NULL COMMENT '角色',
+  content TEXT NOT NULL,
+
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+  INDEX idx_session_id (session_id),
+  INDEX idx_user (user_id),
+
+  -- 外键约束
+  CONSTRAINT fk_ui_msg_session FOREIGN KEY (session_id) REFERENCES chat_sessions(session_id) ON DELETE CASCADE,
+  CONSTRAINT fk_ui_msg_user FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -16,33 +16,44 @@ const {
   generateTitleByFirstMsg,
   updateSessionTitle,
   getSessionList,
+  saveUiMsg,
+  getUiMsgList,
+  deleteSingleSession,
 } = require("../controller/ai");
 const { ErrorModel, SuccessModel } = require("../model/resModel");
 const authMiddleware = require("../middleware/auth");
 
 router.post("/chat", authMiddleware, async (req, res) => {
   let { message, sessionId } = req.body;
-  if (!message) return res.end("请输入您的问题");
   const userId = req.userId;
+
+  console.log("sessionid: ", sessionId);
+  // 这里报错形式待优化
+  if (!message) return res.end("请输入您的问题");
+  if (!sessionId) return res.status(400).json(new ErrorModel("无效sessionId"));
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
 
   let sessionHistory = [];
-
   if (sessionId) {
-    const [sessions] = await checkSessionIdValid(sessionId, userId);
-    if (sessions.length) {
-      sessionHistory = await getSessionMessages(sessionId);
-    } else {
-      await createNewSession(sessionId, userId);
-      generateTitleByFirstMsg(message).then(async (title) => {
-        await updateSessionTitle(sessionId, title);
-      });
+    try {
+      const sessions = await checkSessionIdValid(sessionId, userId);
+      if (sessions.length) {
+        sessionHistory = await getSessionMessages(sessionId);
+      } else {
+        await createNewSession(sessionId, userId);
+        generateTitleByFirstMsg(message).then(async (title) => {
+          console.log("generate title: ", title);
+          await updateSessionTitle(sessionId, title);
+        });
+      }
+    } catch (err) {
+      console.log("init-chat-error:", err);
     }
-  } else return;
-
-  console.log("sessionHistory: ", sessionHistory);
+  } else {
+    res.end();
+  }
 
   const messages = [
     {
@@ -59,6 +70,9 @@ router.post("/chat", authMiddleware, async (req, res) => {
 
   // 用户消息存入聊天记录
   await saveUserMessage(sessionId, userId, message);
+  await saveUiMsg(sessionId, userId, "user", message);
+
+  let aiResponse = "";
 
   try {
     let isToolCall = false;
@@ -66,6 +80,7 @@ router.post("/chat", authMiddleware, async (req, res) => {
 
     while (isFirstChat || isToolCall) {
       const toolCallMap = {}; // 每轮对话结束后，清空toolCallMap
+      console.log("messages: ", messages);
       const stream = await client.chat.completions.create({
         model: "deepseek-chat",
         messages,
@@ -78,13 +93,11 @@ router.post("/chat", authMiddleware, async (req, res) => {
 
       for await (const chunk of stream) {
         const delta = chunk.choices[0]?.delta;
+
         if (delta.tool_calls) {
-          console.log("delta: ", delta.tool_calls);
-        }
-        if (delta.tool_calls) {
-          await saveAssistantMessage(sessionId, userId, delta.tool_calls);
           isToolCall = true;
           for (const tc of delta.tool_calls) {
+            console.log("tc: ", tc);
             if (!toolCallMap[tc.index]) {
               toolCallMap[tc.index] = {
                 json: "",
@@ -99,10 +112,10 @@ router.post("/chat", authMiddleware, async (req, res) => {
             if (tc.function?.arguments) {
               toolCallMap[tc.index].json += tc.function.arguments;
             }
+            toolCallMap[tc.index].tc = tc;
           }
         } else if (delta.content) {
-          await saveAssistantMessage(sessionId, userId, delta.content);
-          console.log("delta-conten");
+          aiResponse += delta.content;
           res.write(delta.content);
         }
       }
@@ -124,7 +137,7 @@ router.post("/chat", authMiddleware, async (req, res) => {
           try {
             const result = await func(functionArgs, userId);
             res.write(`[S:${taskId}:success:${msgModel(result)}]`);
-            await saveToolCallResultMessage(sessionId, userId, result, id);
+
             return result;
           } catch (err) {
             res.write(`[S:${taskId}:error:${description}出错]`);
@@ -137,33 +150,81 @@ router.post("/chat", authMiddleware, async (req, res) => {
           _toolCalls.map((item, index) => runTask(item, index)),
         );
 
-        messages.push({
-          role: "assistant",
-          tool_calls: _toolCalls.map((item) => {
-            const { id, functionName, json } = item;
-            return {
-              id,
+        console.log("toolCalls: ", JSON.stringify(_toolCalls));
+
+        _toolCalls.map(async (toolCall, index) => {
+          const { id, functionName, json, tc } = toolCall;
+
+          messages.push({
+            role: "assistant",
+            // ...tc,
+            tool_calls: [
+              {
+                type: "function",
+                id,
+                function: {
+                  name: functionName,
+                  arguments: json,
+                },
+              },
+            ],
+          });
+          await saveAssistantMessage(sessionId, userId, "", [
+            {
               type: "function",
+              id,
               function: {
                 name: functionName,
                 arguments: json,
               },
-            };
-          }),
-        });
-        dataList.map((item, index) => {
-          const { id } = _toolCalls[index];
+            },
+          ]);
+
           messages.push({
             role: "tool",
             tool_call_id: id,
-            content: item,
+            content: dataList[index],
           });
+
+          await saveToolCallResultMessage(
+            sessionId,
+            userId,
+            dataList[index],
+            id,
+          );
         });
+
+        // messages.push({
+        //   role: "assistant",
+        //   tool_calls: _toolCalls.map(async (item) => {
+        //     // await saveAssistantMessage(sessionId, userId, "", delta.tool_calls);
+
+        //     const { id, functionName, json } = item;
+        //     return {
+        //       id,
+        //       type: "function",
+        //       function: {
+        //         name: functionName,
+        //         arguments: json,
+        //       },
+        //     };
+        //   }),
+        // });
+        // dataList.map(async (item, index) => {
+        //   const { id, functionName } = _toolCalls[index];
+        //   messages.push({
+        //     role: "tool",
+        //     tool_call_id: id,
+        //     content: item,
+        //   });
+        //   // await saveToolCallResultMessage(sessionId, userId, item, id);
+        // });
       } else {
         break;
       }
     }
-
+    await saveAssistantMessage(sessionId, userId, aiResponse);
+    await saveUiMsg(sessionId, userId, "ai", aiResponse);
     res.end();
   } catch (err) {
     console.error("chat-error:", err);
@@ -198,24 +259,40 @@ router.post("/analyze-portfolio", authMiddleware, async (req, res) => {
   }
 });
 
-// 获取对话历史聊天记录
-router.get("/session-history", authMiddleware, async (req, res) => {
-  const { sessionId } = req.params;
+// 获取对话历史聊天记录-展示在ui层面的聊天记录
+router.get("/message/list", authMiddleware, async (req, res) => {
+  const { sessionId } = req.query;
   try {
-    const history = await getSessionMessages(sessionId);
+    const history = await getUiMsgList(sessionId);
     res.json(new SuccessModel(history));
   } catch (err) {
     res.status(500).json(new ErrorModel(err.message || "服务器内部错误"));
   }
 });
 // 获取对话列表
-router.get("/session-list", authMiddleware, async (req, res) => {
+router.get("/session/list", authMiddleware, async (req, res) => {
   const { userId } = req;
   try {
     const sessions = await getSessionList(userId);
     res.json(new SuccessModel(sessions));
   } catch (err) {
     res.status(500).json(new ErrorModel(err.message || "服务器内部错误"));
+  }
+});
+// 删除单个会话
+router.post("/session/delete", authMiddleware, async (req, res) => {
+  const { userId } = req;
+  const { sessionId } = req.body;
+  try {
+    const result = await deleteSingleSession(sessionId, userId);
+    if (result.affectedRows > 0) {
+      res.json(new SuccessModel("会话删除成功"));
+    } else {
+      res.status(403).json(new ErrorModel("删除失败: 无权操作或会话不存在"));
+    }
+  } catch (err) {
+    console.log(`delete-session-error-${sessionId}: `, err);
+    res.status(500).json(new ErrorModel("服务器内部错误"));
   }
 });
 
