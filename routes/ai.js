@@ -124,6 +124,7 @@ router.post("/chat", authMiddleware, async (req, res) => {
 
         const _toolCalls = Object.values(toolCallMap);
 
+        // function calling
         const runTask = async (taskItem, index) => {
           const { json, functionName, id } = taskItem;
           const functionArgs = JSON.parse(json || "{}");
@@ -150,35 +151,28 @@ router.post("/chat", authMiddleware, async (req, res) => {
           _toolCalls.map((item, index) => runTask(item, index)),
         );
 
-        console.log("toolCalls: ", JSON.stringify(_toolCalls));
-
-        _toolCalls.map(async (toolCall, index) => {
+        const assistantToolCalls = _toolCalls.map((toolCall) => {
           const { id, functionName, json, tc } = toolCall;
 
-          messages.push({
-            role: "assistant",
-            // ...tc,
-            tool_calls: [
-              {
-                type: "function",
-                id,
-                function: {
-                  name: functionName,
-                  arguments: json,
-                },
-              },
-            ],
-          });
-          await saveAssistantMessage(sessionId, userId, "", [
-            {
-              type: "function",
-              id,
-              function: {
-                name: functionName,
-                arguments: json,
-              },
+          return {
+            type: "function",
+            id,
+            function: {
+              name: functionName,
+              arguments: json,
             },
-          ]);
+          };
+        });
+        messages.push({
+          role: "assistant",
+          content: null,
+          tool_calls: assistantToolCalls,
+        });
+        await saveAssistantMessage(sessionId, userId, "", assistantToolCalls);
+
+        for (let index = 0; index < _toolCalls.length; index++) {
+          const toolCall = _toolCalls[index];
+          const { id } = toolCall;
 
           messages.push({
             role: "tool",
@@ -192,33 +186,7 @@ router.post("/chat", authMiddleware, async (req, res) => {
             dataList[index],
             id,
           );
-        });
-
-        // messages.push({
-        //   role: "assistant",
-        //   tool_calls: _toolCalls.map(async (item) => {
-        //     // await saveAssistantMessage(sessionId, userId, "", delta.tool_calls);
-
-        //     const { id, functionName, json } = item;
-        //     return {
-        //       id,
-        //       type: "function",
-        //       function: {
-        //         name: functionName,
-        //         arguments: json,
-        //       },
-        //     };
-        //   }),
-        // });
-        // dataList.map(async (item, index) => {
-        //   const { id, functionName } = _toolCalls[index];
-        //   messages.push({
-        //     role: "tool",
-        //     tool_call_id: id,
-        //     content: item,
-        //   });
-        //   // await saveToolCallResultMessage(sessionId, userId, item, id);
-        // });
+        }
       } else {
         break;
       }
@@ -260,11 +228,16 @@ router.post("/analyze-portfolio", authMiddleware, async (req, res) => {
 });
 
 // 获取对话历史聊天记录-展示在ui层面的聊天记录
-router.get("/message/list", authMiddleware, async (req, res) => {
-  const { sessionId } = req.query;
+router.post("/message/list", authMiddleware, async (req, res) => {
+  const { sessionId, page = 1, pageSize = 20 } = req.body;
+  console.log("getMsgList: ", req.body);
   try {
-    const history = await getUiMsgList(sessionId);
-    res.json(new SuccessModel(history));
+    const result = await getUiMsgList(
+      sessionId,
+      parseInt(page),
+      parseInt(pageSize),
+    );
+    res.json(new SuccessModel(result));
   } catch (err) {
     res.status(500).json(new ErrorModel(err.message || "服务器内部错误"));
   }

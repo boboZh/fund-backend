@@ -47,7 +47,10 @@ const updateSessionTitle = async (sessionId, title) => {
 
 // 获取会话列表
 const getSessionList = async (userId) => {
-  return await exec(`SELECT * FROM chat_sessions WHERE user_id = ? `, [userId]);
+  return await exec(
+    `SELECT * FROM chat_sessions WHERE user_id = ? ORDER BY updated_at DESC `,
+    [userId],
+  );
 };
 
 // 获取sessionId对应的历史消息
@@ -62,20 +65,6 @@ const getSessionMessages = async (sessionId) => {
       if (msg.role === "user") obj.content = msg.content;
       if (msg.role === "assistant") {
         if (msg.toolCalls) {
-          // const rawCalls =
-          //   typeof msg.toolCalls === "string"
-          //     ? JSON.parse(msg.toolCalls)
-          //     : msg.toolCalls;
-          // obj.tool_calls = rawCalls.map((tc) => {
-          //   return {
-          //     id: tc.id,
-          //     type: "function",
-          //     function: {
-          //       name: tc.function.name,
-          //       arguments: tc.function.arguments || "{}", // openai限制arguments必须是个合法的json字符串
-          //     },
-          //   };
-          // });
           obj.tool_calls = msg.toolCalls;
           obj.content = null; // 有工具调用时，工具设置为null
         } else {
@@ -101,12 +90,33 @@ const saveUiMsg = async (sessionId, userId, role, content) => {
   );
 };
 // 获取对话聊天记录
-const getUiMsgList = async (sessionId) => {
-  const history = await exec(
-    `SELECT * FROM chat_ui_messages WHERE session_id = ?`,
-    [sessionId],
-  );
-  return history || [];
+const getUiMsgList = async (sessionId, page = 1, pageSize = 20) => {
+  // const offset = (page - 1) * pageSize;
+  // console.log("getlistcontroller: ", typeof page, typeof pageSize);
+  // // 按照id倒序查最新的N条
+  // const history = await exec(
+  //   `SELECT * FROM chat_ui_messages WHERE session_id = ? ORDER BY id DESC LIMIT ? OFFSET ?`,
+  //   [sessionId, pageSize + 1, offset],
+  // );
+  const p = Math.max(1, parseInt(page));
+  const ps = Math.max(1, parseInt(pageSize));
+  const offset = (p - 1) * ps;
+
+  const sql = `
+    SELECT * FROM chat_ui_messages 
+    WHERE session_id = ? 
+    ORDER BY id DESC 
+    LIMIT ${ps + 1} OFFSET ${offset}
+  `;
+  const history = await exec(sql, [sessionId]);
+
+  const hasMore = history.length > pageSize;
+  const list = hasMore ? history.slice(0, pageSize) : history;
+  // 返回给前端之前，需要再反转过来，因为聊天界面是从上往下读的
+  return {
+    list: list.reverse(),
+    hasMore,
+  };
 };
 // 存储user用户发的消息
 const saveUserMessage = async (sessionId, userId, content) => {
