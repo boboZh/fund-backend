@@ -6,6 +6,7 @@ const {
   tools,
   actions,
 } = require("../services/ai");
+const { sliceMessages, getSafeSplitIndex } = require("../utils/tools");
 const {
   getSessionMessages,
   saveAssistantMessage,
@@ -19,6 +20,9 @@ const {
   saveUiMsg,
   getUiMsgList,
   deleteSingleSession,
+  generateMemorySummary,
+  updateSessionSummary,
+  deleteCompressedMessages,
 } = require("../controller/ai");
 const { ErrorModel, SuccessModel } = require("../model/resModel");
 const authMiddleware = require("../middleware/auth");
@@ -27,7 +31,6 @@ router.post("/chat", authMiddleware, async (req, res) => {
   let { message, sessionId } = req.body;
   const userId = req.userId;
 
-  console.log("sessionid: ", sessionId);
   // 这里报错形式待优化
   if (!message) return res.end("请输入您的问题");
   if (!sessionId) return res.status(400).json(new ErrorModel("无效sessionId"));
@@ -36,6 +39,7 @@ router.post("/chat", authMiddleware, async (req, res) => {
   res.setHeader("Connection", "keep-alive");
 
   let sessionHistory = [];
+  let currentSummary = "";
   if (sessionId) {
     try {
       const sessions = await checkSessionIdValid(sessionId, userId);
@@ -44,24 +48,74 @@ router.post("/chat", authMiddleware, async (req, res) => {
       } else {
         await createNewSession(sessionId, userId);
         generateTitleByFirstMsg(message).then(async (title) => {
-          console.log("generate title: ", title);
           await updateSessionTitle(sessionId, title);
         });
       }
     } catch (err) {
-      console.log("init-chat-error:", err);
+      console.error("init-chat-error:", err);
     }
   } else {
     res.end();
   }
 
+  // 当历史消息超过20条时，压缩前10条
+  const COMPRESS_THRESHOLD = 20;
+  const COMPRESS_COUNT = 10;
+  console.log("sessionHistoryLength: ", sessionHistory.length);
+  if (sessionHistory.length > COMPRESS_THRESHOLD) {
+    // 获取安全的切割点
+    const safeSplitIndex = getSafeSplitIndex(sessionHistory, COMPRESS_COUNT);
+
+    if (safeSplitIndex > 0) {
+      // 截取需要压缩的历史消息
+      // const messagesToCompress = sessionHistory.slice(0, COMPRESS_COUNT);
+      const messagesToCompress = sessionHistory.slice(0, safeSplitIndex);
+
+      // 调用ai生成新的摘要
+      currentSummary = await generateMemorySummary(
+        currentSummary,
+        messagesToCompress,
+      );
+      // 将新的摘要写入数据库
+      await updateSessionSummary(sessionId, currentSummary);
+      // 删除已压缩的历史记录
+      deleteCompressedMessages(
+        sessionId,
+        messagesToCompress.map((item) => item.id),
+      ).catch((err) => {
+        console.error(`异步删除压缩消息失败：${sessionId}: `, err);
+      });
+      // 更新当前内存里的历史记录
+      // sessionHistory = sessionHistory.slice(COMPRESS_COUNT);
+      sessionHistory = sessionHistory.slice(safeSplitIndex);
+    }
+  }
+
+  console.log("summary: ", currentSummary);
+
+  const systemPrompt =
+    "你是一个高效的投资助手。当用户的问题包含多个指令时，请务必在单词响应中输出所有必要的tool_calls";
+
+  // 摘要作为长期记忆，拼接到系统提示词
+  const finalSystemPrompt = currentSummary
+    ? `${systemPrompt}\n\n【关于用户的长期记忆】：\n${currentSummary}`
+    : systemPrompt;
+
+  // const slicedMessages = sliceMessages(sessionHistory).map((item) => {
+  //   const { id, ...rest } = item;
+  //   return rest;
+  // });
+
   const messages = [
     {
       role: "system",
-      content:
-        "你是一个高效的投资助手。当用户的问题包含多个指令时，请务必在单词响应中输出所有必要的tool_calls",
+      content: finalSystemPrompt,
     },
-    ...sessionHistory,
+    ...sessionHistory.map((item) => {
+      const { id, ...rest } = item;
+      return rest;
+    }),
+    // ...slicedMessages,
     {
       role: "user",
       content: message,
@@ -80,7 +134,6 @@ router.post("/chat", authMiddleware, async (req, res) => {
 
     while (isFirstChat || isToolCall) {
       const toolCallMap = {}; // 每轮对话结束后，清空toolCallMap
-      console.log("messages: ", messages);
       const stream = await client.chat.completions.create({
         model: "deepseek-chat",
         messages,
@@ -97,7 +150,6 @@ router.post("/chat", authMiddleware, async (req, res) => {
         if (delta.tool_calls) {
           isToolCall = true;
           for (const tc of delta.tool_calls) {
-            console.log("tc: ", tc);
             if (!toolCallMap[tc.index]) {
               toolCallMap[tc.index] = {
                 json: "",
@@ -120,8 +172,6 @@ router.post("/chat", authMiddleware, async (req, res) => {
         }
       }
       if (isToolCall) {
-        console.log("fullToolCall：", toolCallMap);
-
         const _toolCalls = Object.values(toolCallMap);
 
         // function calling
@@ -222,7 +272,7 @@ router.post("/analyze-portfolio", authMiddleware, async (req, res) => {
         .status(200)
         .end("【系统提示】AI 助手暂时欠费了，请联系管理员充值或更换 API Key。");
     }
-    console.log("ai-error: ", err);
+    console.error("ai-error: ", err);
     res.status(500).json(new ErrorModel(err.message || "AI服务异常"));
   }
 });
@@ -230,7 +280,6 @@ router.post("/analyze-portfolio", authMiddleware, async (req, res) => {
 // 获取对话历史聊天记录-展示在ui层面的聊天记录
 router.post("/message/list", authMiddleware, async (req, res) => {
   const { sessionId, page = 1, pageSize = 20 } = req.body;
-  console.log("getMsgList: ", req.body);
   try {
     const result = await getUiMsgList(
       sessionId,
@@ -264,7 +313,7 @@ router.post("/session/delete", authMiddleware, async (req, res) => {
       res.status(403).json(new ErrorModel("删除失败: 无权操作或会话不存在"));
     }
   } catch (err) {
-    console.log(`delete-session-error-${sessionId}: `, err);
+    console.error(`delete-session-error-${sessionId}: `, err);
     res.status(500).json(new ErrorModel("服务器内部错误"));
   }
 });

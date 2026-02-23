@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS chat_sessions (
     session_id VARCHAR(50) PRIMARY KEY COMMENT '会话唯一ID，建议用UUID',
     user_id INT NOT NULL COMMENT '所属用户ID',
     title VARCHAR(100) DEFAULT '新对话' COMMENT '会话标题',
+    summary TEXT COMMENT '会话的长期记忆摘要，用户大模型上下文压缩',
     is_pinned BOOLEAN DEFAULT FALSE COMMENT '是否置顶',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

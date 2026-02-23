@@ -61,7 +61,7 @@ const getSessionMessages = async (sessionId) => {
   );
   return (
     history?.map((msg) => {
-      const obj = { role: msg.role };
+      const obj = { role: msg.role, id: msg.id };
       if (msg.role === "user") obj.content = msg.content;
       if (msg.role === "assistant") {
         if (msg.toolCalls) {
@@ -72,11 +72,8 @@ const getSessionMessages = async (sessionId) => {
         }
       }
       if (msg.role === "tool") {
-        console.log("msg: ", msg);
-
         obj.content = msg.content;
         obj.tool_call_id = msg.toolCallId;
-        obj.name = msg.functionName;
       }
       return obj;
     }) || []
@@ -176,6 +173,55 @@ const deleteSingleSession = async (sessionId, userId) => {
   );
 };
 
+// 生成或更新记忆摘要
+const generateMemorySummary = async (oldSummary, messagesToCompress) => {
+  const conversationText = messagesToCompress
+    .map((item) => `${item.role}:${item.content || "调用了工具"}`)
+    .join("\n");
+  const summaryPrompt = `
+    你是一个负责管理对话上下文的记忆助手。
+    请基于之前的摘要（如果有）和最新的一段对话记录，生成一份连贯、精简的最新摘要。
+    【要求】
+    1. 重点保留用户的个人信息、偏好、以及之前讨论过的核心客观事实（如：用户提到的基金代码、投资意向等）。
+    2. 剔除无效的客套话和中间的思考过程。
+    3. 尽量控制在 300 字以内。
+    
+    【之前的摘要】: ${oldSummary || "无"}
+    【最新对话记录】:
+    ${conversationText}
+  `;
+  try {
+    const response = await client.chat.completions.create({
+      model: "deepseek-chat",
+      messages: [{ role: "system", content: summaryPrompt }],
+      temperature: 0.3, // 降低温度，保证摘要客观
+    });
+    return response.choices[0].message.content;
+  } catch (err) {
+    console.error("摘要生成失败：", err);
+    return oldSummary;
+  }
+};
+
+// 更新会话长期记忆摘要
+const updateSessionSummary = async (sessionId, summary) => {
+  return await exec(
+    `UPDATE chat_sessions SET summary = ? WHERE session_id = ? `,
+    [summary, sessionId],
+  );
+};
+
+// 删除已压缩为摘要的历史消息（物理删除，节省空间）
+const deleteCompressedMessages = async (sessionId, msgIds) => {
+  if (!msgIds || msgIds.length === 0) return;
+
+  const placeholders = msgIds.map(() => "?").join(",");
+  return await exec(
+    `DELETE FROM chat_messages WHERE session_id = ? AND id IN (${placeholders})`,
+    [sessionId, ...msgIds],
+  );
+};
+
 module.exports = {
   generateTitleByFirstMsg,
   checkSessionIdValid,
@@ -189,4 +235,7 @@ module.exports = {
   saveUiMsg,
   getUiMsgList,
   deleteSingleSession,
+  generateMemorySummary,
+  updateSessionSummary,
+  deleteCompressedMessages,
 };
