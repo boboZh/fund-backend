@@ -61,14 +61,12 @@ router.post("/chat", authMiddleware, async (req, res) => {
   // 当历史消息超过20条时，压缩前10条
   const COMPRESS_THRESHOLD = 20;
   const COMPRESS_COUNT = 10;
-  console.log("sessionHistoryLength: ", sessionHistory.length);
   if (sessionHistory.length > COMPRESS_THRESHOLD) {
     // 获取安全的切割点
     const safeSplitIndex = getSafeSplitIndex(sessionHistory, COMPRESS_COUNT);
 
     if (safeSplitIndex > 0) {
       // 截取需要压缩的历史消息
-      // const messagesToCompress = sessionHistory.slice(0, COMPRESS_COUNT);
       const messagesToCompress = sessionHistory.slice(0, safeSplitIndex);
 
       // 调用ai生成新的摘要
@@ -86,12 +84,9 @@ router.post("/chat", authMiddleware, async (req, res) => {
         console.error(`异步删除压缩消息失败：${sessionId}: `, err);
       });
       // 更新当前内存里的历史记录
-      // sessionHistory = sessionHistory.slice(COMPRESS_COUNT);
       sessionHistory = sessionHistory.slice(safeSplitIndex);
     }
   }
-
-  console.log("summary: ", currentSummary);
 
   const systemPrompt =
     "你是一个高效的投资助手。当用户的问题包含多个指令时，请务必在单词响应中输出所有必要的tool_calls";
@@ -100,11 +95,6 @@ router.post("/chat", authMiddleware, async (req, res) => {
   const finalSystemPrompt = currentSummary
     ? `${systemPrompt}\n\n【关于用户的长期记忆】：\n${currentSummary}`
     : systemPrompt;
-
-  // const slicedMessages = sliceMessages(sessionHistory).map((item) => {
-  //   const { id, ...rest } = item;
-  //   return rest;
-  // });
 
   const messages = [
     {
@@ -115,7 +105,6 @@ router.post("/chat", authMiddleware, async (req, res) => {
       const { id, ...rest } = item;
       return rest;
     }),
-    // ...slicedMessages,
     {
       role: "user",
       content: message,
