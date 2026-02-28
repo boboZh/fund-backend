@@ -6,7 +6,11 @@ const {
   tools,
   actions,
 } = require("../services/ai");
-const { sliceMessages, getSafeSplitIndex } = require("../utils/tools");
+const {
+  sliceMessages,
+  getSafeSplitIndex,
+  sanitizeHistory,
+} = require("../utils/tools");
 const {
   getSessionMessages,
   saveAssistantMessage,
@@ -28,12 +32,13 @@ const { ErrorModel, SuccessModel } = require("../model/resModel");
 const authMiddleware = require("../middleware/auth");
 
 router.post("/chat", authMiddleware, async (req, res) => {
-  let { message, sessionId } = req.body;
+  let { message, sessionId, isRegenerate } = req.body;
   const userId = req.userId;
 
   // 这里报错形式待优化
   if (!message) return res.end("请输入您的问题");
   if (!sessionId) return res.status(400).json(new ErrorModel("无效sessionId"));
+  // 防止代理服务器缓存：
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
@@ -45,6 +50,7 @@ router.post("/chat", authMiddleware, async (req, res) => {
       const sessions = await checkSessionIdValid(sessionId, userId);
       if (sessions.length) {
         sessionHistory = await getSessionMessages(sessionId);
+        sessionHistory = sanitizeHistory(sessionHistory);
       } else {
         await createNewSession(sessionId, userId);
         generateTitleByFirstMsg(message).then(async (title) => {
@@ -56,6 +62,12 @@ router.post("/chat", authMiddleware, async (req, res) => {
     }
   } else {
     res.end();
+  }
+
+  // 如果是重新生成的，把上一次生成一半报错或终止的内容删掉，防止污染上下文
+  if (isRegenerate) {
+    // 数据库删除上一条ai消息
+    // 内存删除sessionHistory里的上一条ai消息
   }
 
   // 当历史消息超过20条时，压缩前10条
@@ -111,11 +123,44 @@ router.post("/chat", authMiddleware, async (req, res) => {
     },
   ];
 
-  // 用户消息存入聊天记录
-  await saveUserMessage(sessionId, userId, message);
-  await saveUiMsg(sessionId, userId, "user", message);
+  if (!isRegenerate) {
+    // 用户消息存入聊天记录
+    await saveUiMsg(sessionId, userId, "user", message);
+  }
 
   let aiResponse = "";
+  let isAborted = false;
+  let finalStatus = "success";
+  // let isUserMsgSavedToBrain = false;
+  const brainMemoryBuffer = []; // 一个完整的会话，会话结束后再全部存入数据库
+  const abortController = new AbortController();
+
+  const aiResponseValid = (aiResponse) => aiResponse && aiResponse.trim();
+
+  const handleClose = async () => {
+    console.log("abort");
+
+    if (!res.writableEnded) {
+      // isAborted = true;
+      finalStatus = "abort";
+      abortController.abort();
+    }
+  };
+
+  // 监听前端主动断开连接（Abort）
+  // req.on("close", async () => {
+  //   console.log("用户主动终止对话");
+  //   isAborted = true;
+  //   abortController.abort(); // 终止大模型计算和生成，节省token
+  //   // 前端断开时，后端可能正在执行复杂的数据库写入或等待其他IO
+  //   // 在这里直接调用async函数，可能会产生竞争条件，或者由于事务关闭导致失败
+  //   if (aiResponse && aiResponse.trim()) {
+  //     await saveUiMsg(sessionId, userId, "ai", aiResponse, "abort");
+  //   }
+  // });
+  req.on("close", handleClose);
+  req.on("aborted", handleClose);
+  res.on("close", handleClose);
 
   try {
     let isToolCall = false;
@@ -123,17 +168,34 @@ router.post("/chat", authMiddleware, async (req, res) => {
 
     while (isFirstChat || isToolCall) {
       const toolCallMap = {}; // 每轮对话结束后，清空toolCallMap
-      const stream = await client.chat.completions.create({
-        model: "deepseek-chat",
-        messages,
-        tools,
-        stream: true,
-        tool_choice: "auto",
-      });
+      const stream = await client.chat.completions.create(
+        {
+          model: "deepseek-chat",
+          messages,
+          tools,
+          stream: true,
+          tool_choice: "auto",
+        },
+        {
+          signal: abortController.signal,
+        },
+      );
       isToolCall = false;
       isFirstChat = false;
 
       for await (const chunk of stream) {
+        // if (!isUserMsgSavedToBrain) {
+        //   await saveUserMessage(sessionId, userId, message);
+        //   isUserMsgSavedToBrain = true;
+        // }
+        brainMemoryBuffer.push({
+          fn: saveUserMessage,
+          args: [sessionId, userId, message],
+        });
+        if (isAborted) {
+          console.log("终止接收大模型数据流");
+          break;
+        }
         const delta = chunk.choices[0]?.delta;
 
         if (delta.tool_calls) {
@@ -160,6 +222,7 @@ router.post("/chat", authMiddleware, async (req, res) => {
           res.write(delta.content);
         }
       }
+
       if (isToolCall) {
         const _toolCalls = Object.values(toolCallMap);
 
@@ -207,7 +270,11 @@ router.post("/chat", authMiddleware, async (req, res) => {
           content: null,
           tool_calls: assistantToolCalls,
         });
-        await saveAssistantMessage(sessionId, userId, "", assistantToolCalls);
+        brainMemoryBuffer.push({
+          fn: saveAssistantMessage,
+          args: [sessionId, userId, "", assistantToolCalls],
+        });
+        // await saveAssistantMessage(sessionId, userId, "", assistantToolCalls);
 
         for (let index = 0; index < _toolCalls.length; index++) {
           const toolCall = _toolCalls[index];
@@ -219,23 +286,72 @@ router.post("/chat", authMiddleware, async (req, res) => {
             content: dataList[index],
           });
 
-          await saveToolCallResultMessage(
-            sessionId,
-            userId,
-            dataList[index],
-            id,
-          );
+          // await saveToolCallResultMessage(
+          //   sessionId,
+          //   userId,
+          //   dataList[index],
+          //   id,
+          // );
+          brainMemoryBuffer.push({
+            fn: saveToolCallResultMessage,
+            args: [sessionId, userId, dataList[index], id],
+          });
         }
       } else {
         break;
       }
     }
-    await saveAssistantMessage(sessionId, userId, aiResponse);
-    await saveUiMsg(sessionId, userId, "ai", aiResponse);
-    res.end();
+    if (finalStatus === "success") {
+      if (aiResponseValid(aiResponse)) {
+        brainMemoryBuffer.push({
+          fn: saveAssistantMessage,
+          args: [sessionId, userId, aiResponse],
+        });
+        // 将完整的上下文对话批量存入数据库
+        for (const task of brainMemoryBuffer) {
+          try {
+            await task.fn(...task.args);
+          } catch (dbErr) {
+            console.error("批量写入数据库失败，终止当前批次：", dbErr);
+            throw dbErr;
+          }
+        }
+      }
+
+      res.end();
+    }
   } catch (err) {
-    console.error("chat-error:", err);
-    res.end("ai暂时休息了，请稍后再试");
+    if (err.name === "AbortError" || err.message?.includes("abort")) {
+      finalStatus = "abort";
+    } else {
+      console.error("chat-error:", err);
+      finalStatus = "error";
+      if (err.status === 402 && !res.writableEnded) {
+        return res.end(
+          "\n【系统提示】AI 助手暂时欠费了，请联系管理员充值或更换 API Key。",
+        );
+      }
+
+      if (!res.writableEnded) {
+        res.end("ai暂时休息了，请稍后再试");
+      }
+    }
+  } finally {
+    req.off("close", handleClose);
+    if (aiResponseValid(aiResponse)) {
+      try {
+        await saveUiMsg(sessionId, userId, "ai", aiResponse, finalStatus);
+        console.log("ui-ai-reponse-saved, finalStatus: ", finalStatus);
+      } catch (dbErr) {
+        console.error("ui-ai-response-save-failed: ", dbErr);
+      }
+    }
+
+    if (!res.writableEnded) {
+      res.end();
+    }
+
+    brainMemoryBuffer.length = 0;
   }
 });
 
@@ -262,7 +378,7 @@ router.post("/analyze-portfolio", authMiddleware, async (req, res) => {
         .end("【系统提示】AI 助手暂时欠费了，请联系管理员充值或更换 API Key。");
     }
     console.error("ai-error: ", err);
-    res.status(500).json(new ErrorModel(err.message || "AI服务异常"));
+    res.end("AI服务异常");
   }
 });
 

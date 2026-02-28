@@ -71,3 +71,22 @@ export const getSafeSplitIndex = (messages, targetIndex) => {
 
   return safeIndex;
 };
+
+// 清洗数据，防止存储过程报错，存入了不完整的ai上下文
+export const sanitizeHistory = (messages) => {
+  if (messages.length === 0) return messages;
+
+  while (true) {
+    const lastMsg = messages[messages.length - 1];
+    if (
+      lastMsg.role === "assistant" &&
+      lastMsg.tool_calls &&
+      lastMsg.tool_calls.length > 0
+    ) {
+      messages.pop();
+    } else {
+      break;
+    }
+  }
+  return messages;
+};

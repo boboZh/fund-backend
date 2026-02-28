@@ -96,6 +96,7 @@ CREATE TABLE IF NOT EXISTS chat_ui_messages (
   user_id INT NOT NULL COMMENT '用户ID(冗余字段方便查询)',
   role ENUM('user', 'ai') NOT NULL COMMENT '角色',
   content TEXT NOT NULL,
+  status ENUM('success', 'abort', 'error') DEFAULT  'success' COMMENT '消息状态-仅针对ai回复'
 
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 

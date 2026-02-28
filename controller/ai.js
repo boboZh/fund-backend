@@ -80,10 +80,17 @@ const getSessionMessages = async (sessionId) => {
   );
 };
 // 存储用户发的消息-ui层面,
-const saveUiMsg = async (sessionId, userId, role, content) => {
+const saveUiMsg = async (
+  sessionId,
+  userId,
+  role,
+  content,
+  status = "success",
+) => {
+  console.log("status: ", status);
   return await exec(
-    `INSERT INTO chat_ui_messages (session_id, user_id, role, content) VALUES (?, ?, ?, ?)`,
-    [sessionId, userId, role, content],
+    `INSERT INTO chat_ui_messages (session_id, user_id, role, content, status) VALUES (?, ?, ?, ?, ?)`,
+    [sessionId, userId, role, content, status],
   );
 };
 // 获取对话聊天记录
