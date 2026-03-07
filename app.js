@@ -6,6 +6,7 @@ const createError = require("http-errors");
 const userRouter = require("./routes/user");
 const fundRouter = require("./routes/fund");
 const aiRouter = require("./routes/ai");
+const uploadRouter = require("./routes/upload");
 const { WebSocketServer } = require("ws");
 
 const app = express();
@@ -51,6 +52,7 @@ app.use(cookieParser(COOKIE_SECRET));
 app.use("/api/user", userRouter);
 app.use("/api/fund", fundRouter);
 app.use("/api/ai", aiRouter);
+app.use("/api/file", uploadRouter);
 
 // --- 错误处理 ---
 

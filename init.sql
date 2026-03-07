@@ -96,7 +96,7 @@ CREATE TABLE IF NOT EXISTS chat_ui_messages (
   user_id INT NOT NULL COMMENT '用户ID(冗余字段方便查询)',
   role ENUM('user', 'ai') NOT NULL COMMENT '角色',
   content TEXT NOT NULL,
-  status ENUM('success', 'abort', 'error') DEFAULT  'success' COMMENT '消息状态-仅针对ai回复'
+  status ENUM('success', 'abort', 'error') DEFAULT  'success' COMMENT '消息状态-仅针对ai回复',
 
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
@@ -107,3 +107,15 @@ CREATE TABLE IF NOT EXISTS chat_ui_messages (
   CONSTRAINT fk_ui_msg_session FOREIGN KEY (session_id) REFERENCES chat_sessions(session_id) ON DELETE CASCADE,
   CONSTRAINT fk_ui_msg_user FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 上传文件数据表
+CREATE TABLE IF NOT EXISTS uploaded_files (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  file_hash VARCHAR(255) NOT NULL UNIQUE COMMENT '文件MD5哈希，用于秒传',
+  file_name VARCHAR(255) NOT NULL,
+  file_path VARCHAR(255) NOT NULL COMMENT '文件在服务器的相对路径',
+  user_id INT NOT NULL COMMENT '上传该文件的用户ID',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+  CONSTRAINT fk_uploaded_files_user_id FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
