@@ -19,5 +19,6 @@ jobs:
           script: |
             cd /var/www/backend/fund-manage
             git pull origin main
+            nvm use 20
             npm install --clean
             pm2 reload app.js --name "fund-api"

@@ -15,5 +15,6 @@ jobs:
           node-version: 20
       - name: Install & Test
         run: |
+          nvm use 20
           npm install
           npm run test
