@@ -17,8 +17,12 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+            nvm use 20
+            node -v
+            npm -v
             cd /var/www/backend/fund-manage
             git pull origin main
-            nvm use 20
             npm install --clean
             pm2 reload app.js --name "fund-api"
