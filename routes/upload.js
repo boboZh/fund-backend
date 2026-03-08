@@ -7,7 +7,6 @@ const path = require("path");
 const { exec } = require("../db/mysql");
 const authMiddleware = require("../middleware/auth");
 const { SuccessModel, ErrorModel } = require("../model/resModel");
-const { route } = require("./ai");
 
 const UPLOAD_DIR = path.resolve(__dirname, "../public/uploads/files");
 const CHUNK_DIR = path.resolve(__dirname, "../public/uploads/chunks");
@@ -99,6 +98,7 @@ router.post("/merge", authMiddleware, async (req, res) => {
     await exec(insertSql, [fileHash, fileName, dbPath, userId]);
     res.json(new SuccessModel({ url: dbPath }, "文件合并入库成功"));
   } catch (err) {
+    console.log("merge error: ", err);
     res.status(500).json(new ErrorModel("合并失败"));
   }
 });
