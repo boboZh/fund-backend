@@ -10,8 +10,21 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      - name: 🔍 检查 Secrets 是否为空 (不泄露内容)
+        run: |
+          echo "检查 SERVER_USER: ${{ secrets.SERVER_USER }}"
+          if [ -z "${{ secrets.SERVER_SSH_KEY }}" ]; then 
+            echo "❌ 警告: SERVER_SSH_KEY 是空的！没读到！" 
+          else 
+            echo "✅ SERVER_SSH_KEY 已成功加载！" 
+          fi
+          if [ -z "${{ secrets.SERVER_IP }}" ]; then 
+            echo "❌ 警告: SERVER_IP 是空的！" 
+          else 
+            echo "✅ SERVER_IP 已成功加载！" 
+          fi
       - name: Deploy to Server
-        uses: appleboy/ssh-action@v0.1.6
+        uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
@@ -24,5 +37,5 @@ jobs:
             npm -v
             cd /var/www/backend/fund-manage
             git pull origin main
-            npm install --clean
+            npm ci
             pm2 reload app.js --name "fund-api"
