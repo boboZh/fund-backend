@@ -15,6 +15,14 @@ const app = express();
 
 const env = process.env.NODE_ENV || "dev";
 
+// 💡 新增：最强探照灯，只要有请求进来，不管跨不跨域，立刻报警！
+app.use((req, res, next) => {
+  console.log(
+    `[🚀 收到请求] ${req.method} ${req.path} | Origin: ${req.get("Origin")}`,
+  );
+  next();
+});
+
 // 配置 CORS, 本地直连调试
 app.use(
   cors({
@@ -52,13 +60,6 @@ app.use("/api/fund", fundRouter);
 app.use("/api/ai", aiRouter);
 app.use("/api/file", uploadRouter);
 
-// --- 错误处理 ---
-
-app.use((req, res, next) => {
-  console.log("--req path--", req.path);
-  next();
-});
-
 // 404 捕获：如果上面的路由都没匹配上，执行这里
 app.use((req, res, next) => {
   next(createError(404, "接口不存在"));
@@ -66,6 +67,7 @@ app.use((req, res, next) => {
 
 // 全局错误处理：接收所有 next(err) 传过来的错误
 app.use((err, req, res, next) => {
+  console.error("❌ 全局捕获到错误:", err.message);
   const status = err.status || 500;
   res.status(status).json({
     success: false,
