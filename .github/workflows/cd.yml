@@ -36,6 +36,6 @@ jobs:
             node -v
             npm -v
             cd /var/www/backend/fund-manage
-            git pull origin main
+            git pull origin master
             npm ci
             pm2 reload app.js --name "fund-api"
