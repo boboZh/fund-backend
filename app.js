@@ -22,12 +22,9 @@ app.use(
     origin: function (origin, callback) {
       // 本地开发时，允许所有本地 origin，或者写死前端的 origin (如 'http://localhost:5173')
       // 如果没有 origin (比如 postman 直接请求)，也放行
-      if (
-        !origin ||
-        origin.includes("localhost") ||
-        origin.includes("127.0.0.1") ||
-        origin.includes("112.126.27.148")
-      ) {
+      //   // origin.includes("localhost") ||
+      // origin.includes("127.0.0.1") ||
+      if (!origin || origin.includes("112.126.27.148")) {
         callback(null, true);
       } else {
         callback(new Error("Not allowed by CORS"));
