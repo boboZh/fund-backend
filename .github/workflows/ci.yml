@@ -3,7 +3,7 @@ name: Backend CI
 on:
   push:
     branches: [ master ]
-
+  workflow_dispatch:
 jobs:
   test-and-lint:
     runs-on: ubuntu-latest
