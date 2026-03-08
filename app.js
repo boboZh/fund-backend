@@ -25,7 +25,8 @@ app.use(
       if (
         !origin ||
         origin.includes("localhost") ||
-        origin.includes("127.0.0.1")
+        origin.includes("127.0.0.1") ||
+        origin.includes("112.126.27.148")
       ) {
         callback(null, true);
       } else {
