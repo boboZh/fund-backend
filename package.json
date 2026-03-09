@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "test": "jest",
-    "dev": "cross-env NODE_ENV=dev node --watch app.js",
+    "dev": "cross-env NODE_ENV=dev nodemon app.js",
     "prod": "cross-env NODE_ENV=production pm2 start app.js",
     "db:init:dev": "cross-env NODE_ENV=dev node scripts/initDb.js",
     "db:init:prod": "cross-env NODE_ENV=production node scripts/initDb.js"
@@ -19,6 +19,7 @@
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "iconv-lite": "^0.7.2",
+    "vite": "^7.3.1",
     "web-streams-polyfill": "^4.2.0"
   },
   "devDependencies": {
@@ -36,6 +37,9 @@
     "mysql2": "^3.16.2",
     "nodemon": "^3.1.11",
     "openai": "^6.18.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-router-dom": "^7.13.1",
     "redis": "^5.10.0",
     "uuid": "^13.0.0",
     "ws": "^8.19.0",
