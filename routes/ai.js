@@ -30,6 +30,7 @@ const {
 } = require("../controller/ai");
 const { ErrorModel, SuccessModel } = require("../model/resModel");
 const authMiddleware = require("../middleware/auth");
+const { signalContext } = require("../utils/context");
 
 router.post("/chat", authMiddleware, async (req, res) => {
   let { message, sessionId, isRegenerate } = req.body;
@@ -62,12 +63,6 @@ router.post("/chat", authMiddleware, async (req, res) => {
     }
   } else {
     res.end();
-  }
-
-  // 如果是重新生成的，把上一次生成一半报错或终止的内容删掉，防止污染上下文
-  if (isRegenerate) {
-    // 数据库删除上一条ai消息
-    // 内存删除sessionHistory里的上一条ai消息
   }
 
   // 当历史消息超过20条时，压缩前10条
@@ -129,19 +124,16 @@ router.post("/chat", authMiddleware, async (req, res) => {
   }
 
   let aiResponse = "";
-  let isAborted = false;
   let finalStatus = "success";
   // let isUserMsgSavedToBrain = false;
   const brainMemoryBuffer = []; // 一个完整的会话，会话结束后再全部存入数据库
   const abortController = new AbortController();
+  const { signal } = abortController;
 
   const aiResponseValid = (aiResponse) => aiResponse && aiResponse.trim();
 
   const handleClose = async () => {
-    console.log("abort");
-
     if (!res.writableEnded) {
-      // isAborted = true;
       finalStatus = "abort";
       abortController.abort();
     }
@@ -150,7 +142,6 @@ router.post("/chat", authMiddleware, async (req, res) => {
   // 监听前端主动断开连接（Abort）
   // req.on("close", async () => {
   //   console.log("用户主动终止对话");
-  //   isAborted = true;
   //   abortController.abort(); // 终止大模型计算和生成，节省token
   //   // 前端断开时，后端可能正在执行复杂的数据库写入或等待其他IO
   //   // 在这里直接调用async函数，可能会产生竞争条件，或者由于事务关闭导致失败
@@ -177,7 +168,7 @@ router.post("/chat", authMiddleware, async (req, res) => {
           tool_choice: "auto",
         },
         {
-          signal: abortController.signal,
+          signal,
         },
       );
       isToolCall = false;
@@ -192,10 +183,6 @@ router.post("/chat", authMiddleware, async (req, res) => {
           fn: saveUserMessage,
           args: [sessionId, userId, message],
         });
-        if (isAborted) {
-          console.log("终止接收大模型数据流");
-          break;
-        }
         const delta = chunk.choices[0]?.delta;
 
         if (delta.tool_calls) {
@@ -224,79 +211,86 @@ router.post("/chat", authMiddleware, async (req, res) => {
       }
 
       if (isToolCall) {
-        const _toolCalls = Object.values(toolCallMap);
+        if (signal.aborted) throw new Error("AbortError");
 
-        // function calling
-        const runTask = async (taskItem, index) => {
-          const { json, functionName, id } = taskItem;
-          const functionArgs = JSON.parse(json || "{}");
-          const { func, description, msgModel } = actions[functionName];
-          const taskId = `task_${Date.now()}_${index}`;
-          const _desc =
-            typeof description === "function"
-              ? description(functionArgs)
-              : description;
-          res.write(`[S:${taskId}:loading:${_desc}]`);
-          try {
-            const result = await func(functionArgs, userId);
-            res.write(`[S:${taskId}:success:${msgModel(result)}]`);
+        // everything inside this 'run' block can access the signal
+        await signalContext.run(signal, async () => {
+          const _toolCalls = Object.values(toolCallMap);
 
-            return result;
-          } catch (err) {
-            res.write(`[S:${taskId}:error:${description}出错]`);
-            throw err;
-          }
-        };
+          // function calling
+          const runTask = async (taskItem, index) => {
+            if (signal.aborted) throw new Error("AbortError");
 
-        // 同时处理多个工具调用
-        const dataList = await Promise.all(
-          _toolCalls.map((item, index) => runTask(item, index)),
-        );
+            const { json, functionName, id } = taskItem;
+            const functionArgs = JSON.parse(json || "{}");
+            const { func, description, msgModel } = actions[functionName];
+            const taskId = `task_${Date.now()}_${index}`;
+            const _desc =
+              typeof description === "function"
+                ? description(functionArgs)
+                : description;
+            res.write(`[S:${taskId}:loading:${_desc}]`);
+            try {
+              const result = await func(functionArgs, userId);
+              res.write(`[S:${taskId}:success:${msgModel(result)}]`);
 
-        const assistantToolCalls = _toolCalls.map((toolCall) => {
-          const { id, functionName, json, tc } = toolCall;
-
-          return {
-            type: "function",
-            id,
-            function: {
-              name: functionName,
-              arguments: json,
-            },
+              return result;
+            } catch (err) {
+              res.write(`[S:${taskId}:error:${description}出错]`);
+              throw err;
+            }
           };
-        });
-        messages.push({
-          role: "assistant",
-          content: null,
-          tool_calls: assistantToolCalls,
-        });
-        brainMemoryBuffer.push({
-          fn: saveAssistantMessage,
-          args: [sessionId, userId, "", assistantToolCalls],
-        });
-        // await saveAssistantMessage(sessionId, userId, "", assistantToolCalls);
 
-        for (let index = 0; index < _toolCalls.length; index++) {
-          const toolCall = _toolCalls[index];
-          const { id } = toolCall;
+          // 同时处理多个工具调用
+          const dataList = await Promise.all(
+            _toolCalls.map((item, index) => runTask(item, index)),
+          );
 
+          const assistantToolCalls = _toolCalls.map((toolCall) => {
+            const { id, functionName, json, tc } = toolCall;
+
+            return {
+              type: "function",
+              id,
+              function: {
+                name: functionName,
+                arguments: json,
+              },
+            };
+          });
           messages.push({
-            role: "tool",
-            tool_call_id: id,
-            content: dataList[index],
+            role: "assistant",
+            content: null,
+            tool_calls: assistantToolCalls,
           });
-
-          // await saveToolCallResultMessage(
-          //   sessionId,
-          //   userId,
-          //   dataList[index],
-          //   id,
-          // );
           brainMemoryBuffer.push({
-            fn: saveToolCallResultMessage,
-            args: [sessionId, userId, dataList[index], id],
+            fn: saveAssistantMessage,
+            args: [sessionId, userId, "", assistantToolCalls],
           });
-        }
+          // await saveAssistantMessage(sessionId, userId, "", assistantToolCalls);
+
+          for (let index = 0; index < _toolCalls.length; index++) {
+            const toolCall = _toolCalls[index];
+            const { id } = toolCall;
+
+            messages.push({
+              role: "tool",
+              tool_call_id: id,
+              content: dataList[index],
+            });
+
+            // await saveToolCallResultMessage(
+            //   sessionId,
+            //   userId,
+            //   dataList[index],
+            //   id,
+            // );
+            brainMemoryBuffer.push({
+              fn: saveToolCallResultMessage,
+              args: [sessionId, userId, dataList[index], id],
+            });
+          }
+        });
       } else {
         break;
       }

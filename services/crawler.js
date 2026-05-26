@@ -1,9 +1,11 @@
 const axios = require("axios");
 const cheerio = require("cheerio");
 const iconv = require("iconv-lite");
+const { signalContext } = require("../utils/context");
 
 // 1. 获取基金持仓 (GBK解码)
 async function getFundHoldings(fundCode) {
+  const signal = signalContext.getStore();
   const url = `http://fund.eastmoney.com/${fundCode}.html`;
   try {
     const response = await axios.get(url, {
@@ -12,6 +14,7 @@ async function getFundHoldings(fundCode) {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
       },
+      signal,
     });
 
     // 使用 GBK 解码
@@ -76,6 +79,7 @@ async function getFundHoldings(fundCode) {
 // 2. 获取股票行情 (GBK解码)
 async function getStocksRealtime(stockCodes) {
   if (stockCodes.length === 0) return {};
+  const signal = signalContext.getStore();
   const url = `http://hq.sinajs.cn/list=${stockCodes.join(",")}`;
   try {
     const response = await axios.get(url, {
@@ -84,6 +88,7 @@ async function getStocksRealtime(stockCodes) {
         Referer: "http://finance.sina.com.cn",
         "User-Agent": "Mozilla/5.0",
       },
+      signal,
     });
 
     const data = iconv.decode(Buffer.from(response.data), "gbk");
