@@ -12,8 +12,7 @@ const invalid = (val) => !val && val !== 0;
 async function getPortfolioReport(portfolio) {
   let totalAmount = 0; // 所有持仓金额
   let totalDailyProfit = 0; // 今日所有收益
-
-  const signal = signalContext.getStore();
+  const signal = signalContext.enabled ? signalContext.getStore() : {};
 
   const list = [];
 
@@ -77,7 +76,7 @@ async function getEstimate(fundCode) {
     };
   }
 
-  const signal = signalContext.getStore();
+  const signal = signalContext.enabled ? signalContext.getStore() : {};
   if (signal.aborted) throw new Error("AbortError");
 
   const stockCodes = holdings.map((h) => h.stockCode);

@@ -79,14 +79,14 @@ router.post("/chat", authMiddleware, async (req, res) => {
       // 调用ai生成新的摘要
       currentSummary = await generateMemorySummary(
         currentSummary,
-        messagesToCompress
+        messagesToCompress,
       );
       // 将新的摘要写入数据库
       await updateSessionSummary(sessionId, currentSummary);
       // 删除已压缩的历史记录
       deleteCompressedMessages(
         sessionId,
-        messagesToCompress.map((item) => item.id)
+        messagesToCompress.map((item) => item.id),
       ).catch((err) => {
         console.error(`异步删除压缩消息失败：${sessionId}: `, err);
       });
@@ -122,10 +122,7 @@ router.post("/chat", authMiddleware, async (req, res) => {
     // 用户消息存入聊天记录
     await saveUiMsg(sessionId, userId, "user", message);
   }
-  brainMemoryBuffer.push({
-    fn: saveUserMessage,
-    args: [sessionId, userId, message],
-  });
+
   let aiResponse = "";
   let finalStatus = "success";
   // let isUserMsgSavedToBrain = false;
@@ -134,6 +131,11 @@ router.post("/chat", authMiddleware, async (req, res) => {
   const { signal } = abortController;
 
   const aiResponseValid = (aiResponse) => aiResponse && aiResponse.trim();
+
+  brainMemoryBuffer.push({
+    fn: saveUserMessage,
+    args: [sessionId, userId, message],
+  });
 
   const handleClose = async () => {
     if (!res.writableEnded) {
@@ -172,7 +174,7 @@ router.post("/chat", authMiddleware, async (req, res) => {
         },
         {
           signal,
-        }
+        },
       );
       isToolCall = false;
       isFirstChat = false;
@@ -243,7 +245,7 @@ router.post("/chat", authMiddleware, async (req, res) => {
 
           // 同时处理多个工具调用
           const dataList = await Promise.all(
-            _toolCalls.map((item, index) => runTask(item, index))
+            _toolCalls.map((item, index) => runTask(item, index)),
           );
 
           const assistantToolCalls = _toolCalls.map((toolCall) => {
@@ -304,6 +306,7 @@ router.post("/chat", authMiddleware, async (req, res) => {
         // 将完整的上下文对话批量存入数据库
         for (const task of brainMemoryBuffer) {
           try {
+            console.log("task: ", task.fn);
             await task.fn(...task.args);
           } catch (dbErr) {
             console.error("批量写入数据库失败，终止当前批次：", dbErr);
@@ -322,7 +325,7 @@ router.post("/chat", authMiddleware, async (req, res) => {
       finalStatus = "error";
       if (err.status === 402 && !res.writableEnded) {
         return res.end(
-          "\n【系统提示】AI 助手暂时欠费了，请联系管理员充值或更换 API Key。"
+          "\n【系统提示】AI 助手暂时欠费了，请联系管理员充值或更换 API Key。",
         );
       }
 
@@ -383,7 +386,7 @@ router.post("/message/list", authMiddleware, async (req, res) => {
     const result = await getUiMsgList(
       sessionId,
       parseInt(page),
-      parseInt(pageSize)
+      parseInt(pageSize),
     );
     res.json(new SuccessModel(result));
   } catch (err) {
