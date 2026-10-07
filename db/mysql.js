@@ -32,6 +32,13 @@ const exec = async (sql, params = []) => {
   }
 };
 
+// 失败时把错误抛出去。原 exec 会吞掉异常，研报入库需要知道写入是否成功
+const execStrict = async (sql, params = []) => {
+  const [rows] = await pool.execute({ sql, values: params });
+  return humps.camelizeKeys(rows);
+};
+
 module.exports = {
   exec,
+  execStrict,
 };

@@ -101,8 +101,6 @@ const actions = {
   },
   set_fund_alert: {
     func: async (args, userId) => {
-      console.log("args: ", args);
-
       try {
         const { fundCode, targetProfitRate, stopLossRate, applyAll } = args;
         await setFundAlert(
@@ -110,7 +108,7 @@ const actions = {
           targetProfitRate,
           stopLossRate,
           applyAll,
-          userId,
+          userId
         );
         return JSON.stringify({
           status: "success",
@@ -152,7 +150,6 @@ async function getChatResponse(userInput, userId) {
     stream: true,
     tools: tools,
   });
-  console.log("AI response received: ", response);
 
   const responseMessage = response.choices[0].message;
   const toolCalls = responseMessage.tool_calls;
@@ -182,8 +179,6 @@ async function getChatResponse_2(userInput, fundData, userNickname) {
     ],
     stream: true,
   });
-
-  console.log("ai response: ", response);
 
   return response;
 }

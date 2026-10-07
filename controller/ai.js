@@ -25,7 +25,7 @@ const generateTitleByFirstMsg = async (userFirstMessage) => {
 const checkSessionIdValid = async (sessionId, userId) => {
   const result = await exec(
     `SELECT session_id FROM chat_sessions WHERE session_id = ? AND user_id = ?`,
-    [sessionId, userId],
+    [sessionId, userId]
   );
   return result;
 };
@@ -34,7 +34,7 @@ const checkSessionIdValid = async (sessionId, userId) => {
 const createNewSession = async (sessionId, userId) => {
   return await exec(
     `INSERT INTO chat_sessions (session_id, user_id, title) VALUES (?, ?, ?)`,
-    [sessionId, userId, "新对话"],
+    [sessionId, userId, "新对话"]
   );
 };
 // 更新会话标题
@@ -49,7 +49,7 @@ const updateSessionTitle = async (sessionId, title) => {
 const getSessionList = async (userId) => {
   return await exec(
     `SELECT * FROM chat_sessions WHERE user_id = ? ORDER BY updated_at DESC `,
-    [userId],
+    [userId]
   );
 };
 
@@ -57,7 +57,7 @@ const getSessionList = async (userId) => {
 const getSessionMessages = async (sessionId) => {
   const history = await exec(
     "SELECT * FROM chat_messages WHERE session_id = ?",
-    [sessionId],
+    [sessionId]
   );
   return (
     history?.map((msg) => {
@@ -85,12 +85,11 @@ const saveUiMsg = async (
   userId,
   role,
   content,
-  status = "success",
+  status = "success"
 ) => {
-  console.log("status: ", status);
   return await exec(
     `INSERT INTO chat_ui_messages (session_id, user_id, role, content, status) VALUES (?, ?, ?, ?, ?)`,
-    [sessionId, userId, role, content, status],
+    [sessionId, userId, role, content, status]
   );
 };
 // 获取对话聊天记录
@@ -126,7 +125,7 @@ const getUiMsgList = async (sessionId, page = 1, pageSize = 20) => {
 const saveUserMessage = async (sessionId, userId, content) => {
   return await exec(
     `INSERT INTO chat_messages (session_id, user_id, role, content) VALUES (?, ?, ?, ?)`,
-    [sessionId, userId, "user", content],
+    [sessionId, userId, "user", content]
   );
 };
 // 存储Assistant消息
@@ -134,7 +133,7 @@ const saveAssistantMessage = async (
   sessionId,
   userId,
   content = "",
-  toolcalls,
+  toolcalls
 ) => {
   if (toolcalls) {
     return await exec(
@@ -145,12 +144,12 @@ const saveAssistantMessage = async (
         "assistant",
         typeof toolcalls === "object" ? JSON.stringify(toolcalls) : toolcalls,
         "",
-      ],
+      ]
     ); //toolcalls如果是对象类型，必须转为JSON.stringify(toolcalls) mysql2驱动在发送数据给MySQL之前，必须把JS对象/数组转成字符串，通常是调用对象的toString(), 结果会变成"[object Object]",MySQL会报错，因为"[object Object]"不符合JSON格式要求，无法存入JSON类型的字段
   } else {
     return await exec(
       `INSERT INTO chat_messages (session_id, user_id, role, content) VALUES (?, ?, ?, ?)`,
-      [sessionId, userId, "assistant", content],
+      [sessionId, userId, "assistant", content]
     );
   }
 };
@@ -159,7 +158,7 @@ const saveToolCallResultMessage = async (
   sessionId,
   userId,
   content,
-  toolCallId,
+  toolCallId
 ) => {
   return await exec(
     `INSERT INTO chat_messages (session_id, user_id, role, content, tool_call_id) VALUES (?, ?, ?, ?, ?)`,
@@ -169,14 +168,14 @@ const saveToolCallResultMessage = async (
       "tool",
       typeof content === "object" ? JSON.stringify(content) : content,
       toolCallId,
-    ],
+    ]
   );
 };
 // 删除单个会话
 const deleteSingleSession = async (sessionId, userId) => {
   return await exec(
     `DELETE FROM chat_sessions WHERE session_id = ? AND user_id = ?`,
-    [sessionId, userId],
+    [sessionId, userId]
   );
 };
 
@@ -214,7 +213,7 @@ const generateMemorySummary = async (oldSummary, messagesToCompress) => {
 const updateSessionSummary = async (sessionId, summary) => {
   return await exec(
     `UPDATE chat_sessions SET summary = ? WHERE session_id = ? `,
-    [summary, sessionId],
+    [summary, sessionId]
   );
 };
 
@@ -225,7 +224,7 @@ const deleteCompressedMessages = async (sessionId, msgIds) => {
   const placeholders = msgIds.map(() => "?").join(",");
   return await exec(
     `DELETE FROM chat_messages WHERE session_id = ? AND id IN (${placeholders})`,
-    [sessionId, ...msgIds],
+    [sessionId, ...msgIds]
   );
 };
 

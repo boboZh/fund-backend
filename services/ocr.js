@@ -192,7 +192,6 @@ function parseAlipayOCR(words) {
 
   const _results = deduplicate(results);
 
-  console.log("resutlL ", _results);
   return _results.map((item) => {
     if (!item.code) {
       let matched = fundMapService.searchCodeByName(item.name);

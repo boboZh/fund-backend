@@ -7,6 +7,8 @@ const userRouter = require("./routes/user");
 const fundRouter = require("./routes/fund");
 const aiRouter = require("./routes/ai");
 const uploadRouter = require("./routes/upload");
+const ragRouter = require("./routes/rag");
+const { recoverStuckDocs } = require("./services/rag/ingest");
 const { WebSocketServer } = require("ws");
 
 const app = express();
@@ -18,7 +20,7 @@ const env = process.env.NODE_ENV || "dev";
 // 💡 新增：最强探照灯，只要有请求进来，不管跨不跨域，立刻报警！
 app.use((req, res, next) => {
   console.log(
-    `[🚀 收到请求] ${req.method} ${req.path} | Origin: ${req.get("Origin")}`,
+    `[🚀 收到请求] ${req.method} ${req.path} | Origin: ${req.get("Origin")}`
   );
   next();
 });
@@ -44,7 +46,7 @@ app.use(
     credentials: true, // 关键：允许前端携带凭证（Cookie/Authorization）
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "Cache-Control"],
-  }),
+  })
 );
 
 // 解析 JSON 请求体
@@ -62,6 +64,7 @@ app.use("/api/user", userRouter);
 app.use("/api/fund", fundRouter);
 app.use("/api/ai", aiRouter);
 app.use("/api/file", uploadRouter);
+app.use("/api/rag", ragRouter);
 
 // 404 捕获：如果上面的路由都没匹配上，执行这里
 app.use((req, res, next) => {
@@ -79,9 +82,12 @@ app.use((err, req, res, next) => {
   });
 });
 
-const server = app.listen(3000, async () => {
+const server = app.listen(9000, async () => {
   await fundMapService.init();
-  console.log("✅ Server running at http://localhost:3000");
+  recoverStuckDocs().catch((err) => {
+    console.error("恢复中断的研报入库失败:", err);
+  });
+  console.log("✅ Server running at http://localhost:9000");
 });
 
 const wss = new WebSocketServer({

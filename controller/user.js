@@ -19,7 +19,6 @@ WHERE u.phone = ? AND u.password = ?;`;
   password = genPassword(password);
   const rows = await exec(sql, [phone, password]);
   const user = rows[0];
-  console.log("user: ", user);
   if (user) {
     const sessionId = uuidv4();
     await redisClient.set(`session:${user.userId}`, sessionId, {

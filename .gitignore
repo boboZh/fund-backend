@@ -45,6 +45,9 @@ yarn-error.log*
 .history
 
 
+# 研报原件不提交
+public/uploads/research/
+
 # others
 */.DS_Store
 .DS_Store

@@ -50,7 +50,7 @@ router.post("/batchAdd", authMiddleware, async (req, res) => {
           name: fundName,
           code: fundCode,
         };
-      }),
+      })
     );
     res.json(new SuccessModel(`添加成功${result.length}条`));
   } catch (err) {
@@ -82,12 +82,11 @@ router.post(
     } catch (err) {
       res.status(500).json(new ErrorModel(err.message || "识别失败"));
     }
-  },
+  }
 );
 
 // 删除持仓
 router.post("/delete", authMiddleware, async (req, res) => {
-  console.log("delte: ", req.body);
   if (!req.body.fundCode)
     return res.status(400).json(new ErrorModel("缺失基金代码"));
   try {
@@ -112,7 +111,7 @@ router.post("/setAlert", authMiddleware, async (req, res) => {
       targetProfitRate,
       stopLossRate,
       applyAll,
-      userId,
+      userId
     );
     res.json(new SuccessModel("设置成功"));
   } catch (err) {

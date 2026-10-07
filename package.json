@@ -19,6 +19,7 @@
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "iconv-lite": "^0.7.2",
+    "pdfjs-dist": "^4.10.38",
     "web-streams-polyfill": "^4.2.0"
   },
   "devDependencies": {

@@ -119,3 +119,48 @@ CREATE TABLE IF NOT EXISTS uploaded_files (
 
   CONSTRAINT fk_uploaded_files_user_id FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS research_docs (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  file_hash CHAR(32) NOT NULL COMMENT 'PDF 的 MD5，同一用户不重复入库',
+  file_name VARCHAR(255) NOT NULL,
+  file_path VARCHAR(500) NOT NULL,
+  stock_code VARCHAR(10) NOT NULL,
+  stock_name VARCHAR(50) NOT NULL,
+  report_date DATE NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  org VARCHAR(100) NOT NULL,
+  page_count INT DEFAULT 0,
+  max_chars INT NOT NULL COMMENT '短段落合并上限，不是切分步长',
+  overlap_paragraphs TINYINT NOT NULL COMMENT '重叠的段落数，0 或 1',
+  embed_model VARCHAR(64) DEFAULT NULL,
+  status ENUM('uploaded','parsing','chunked','embedding','embedded','failed') NOT NULL DEFAULT 'uploaded',
+  error_msg VARCHAR(500) DEFAULT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_research_doc_user FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+  UNIQUE KEY uniq_user_file (user_id, file_hash),
+  INDEX idx_research_doc_user_code (user_id, stock_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS research_chunks (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  doc_id INT NOT NULL,
+  user_id INT NOT NULL,
+  chunk_index INT NOT NULL,
+  chunk_type ENUM('text','table','summary') NOT NULL DEFAULT 'text' COMMENT 'summary 为首页侧栏的评级与核心数据',
+  page_start INT DEFAULT NULL,
+  page_end INT DEFAULT NULL,
+  heading VARCHAR(255) DEFAULT NULL COMMENT '块所属的小节标题',
+  paragraph_count INT NOT NULL,
+  content TEXT NOT NULL,
+  char_count INT NOT NULL,
+  CONSTRAINT fk_chunk_doc FOREIGN KEY (doc_id) REFERENCES research_docs(id) ON DELETE CASCADE,
+  UNIQUE KEY uniq_doc_chunk (doc_id, chunk_index),
+  INDEX idx_chunk_user (user_id),
+  FULLTEXT INDEX ft_chunk_content (content) WITH PARSER ngram
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+ALTER TABLE chat_ui_messages
+  ADD COLUMN sources JSON DEFAULT NULL COMMENT 'AI 回答引用的研报片段';
