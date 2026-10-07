@@ -115,6 +115,23 @@ const listChunks = async (docId, userId) =>
     [docId, userId],
   );
 
+// 按 Qdrant 返回的 point id 取原文。user_id 一起限定，避免把别的用户的块读出来。
+const listChunksByIds = async (userId, ids) => {
+  const chunkIds = [...new Set(ids.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))];
+  if (!chunkIds.length) return [];
+  const placeholders = chunkIds.map(() => "?").join(", ");
+  return execStrict(
+    `SELECT c.id, c.doc_id, c.chunk_index, c.chunk_type, c.page_start, c.page_end,
+            c.heading, c.content,
+            d.stock_code, d.stock_name, d.title, d.org,
+            DATE_FORMAT(d.report_date, '%Y-%m-%d') AS report_date
+     FROM research_chunks c
+     JOIN research_docs d ON d.id = c.doc_id
+     WHERE c.user_id = ? AND c.id IN (${placeholders})`,
+    [userId, ...chunkIds],
+  );
+};
+
 const deleteDoc = async (id, userId) =>
   execStrict(`DELETE FROM research_docs WHERE id = ? AND user_id = ?`, [id, userId]);
 
@@ -132,6 +149,7 @@ module.exports = {
   updateDoc,
   replaceChunks,
   listChunks,
+  listChunksByIds,
   deleteDoc,
   recoverStuckDocs,
 };
