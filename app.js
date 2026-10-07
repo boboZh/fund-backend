@@ -9,6 +9,7 @@ const aiRouter = require("./routes/ai");
 const uploadRouter = require("./routes/upload");
 const ragRouter = require("./routes/rag");
 const { recoverStuckDocs } = require("./services/rag/ingest");
+const { ensureCollection } = require("./services/rag/qdrant");
 const { WebSocketServer } = require("ws");
 
 const app = express();
@@ -87,6 +88,11 @@ const server = app.listen(9000, async () => {
   recoverStuckDocs().catch((err) => {
     console.error("恢复中断的研报入库失败:", err);
   });
+  try {
+    await ensureCollection();
+  } catch (err) {
+    console.error("初始化 Qdrant collection 失败:", err);
+  }
   console.log("✅ Server running at http://localhost:9000");
 });
 
