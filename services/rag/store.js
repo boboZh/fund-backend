@@ -65,6 +65,7 @@ const UPDATABLE = new Set([
   "page_count",
   "max_chars",
   "overlap_paragraphs",
+  "embed_model",
 ]);
 
 const updateDoc = async (id, fields) => {

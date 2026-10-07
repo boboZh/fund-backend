@@ -4,6 +4,8 @@ const { splitParagraphs } = require("./chunk");
 const { orderDocument, LAYOUT_VERSION, dropToc } = require("./readingOrder");
 const { pdfPathOf, droppedPathOf, layoutPathOf } = require("./paths");
 const store = require("./store");
+const { embedChunks } = require("./embed");
+const { deleteByDoc, upsertChunks } = require("./qdrant");
 
 const running = new Set();
 const MIN_CHARS_PER_PAGE = 30;
@@ -115,12 +117,29 @@ const ingestDoc = async (docId) => {
       return;
     }
 
+    // 重切会插入新的自增 id。先按 doc_id 删掉旧 point，再换 MySQL 里的块，否则旧向量还指着已经删掉的 id。
+    await deleteByDoc(doc.id, doc.userId);
     await store.replaceChunks(docId, doc.userId, chunks);
-    await fse.writeJson(droppedPathOf(doc.fileHash), [...(parsed.dropped || []), ...withoutToc.dropped].slice(0, 50));
+    await fse.writeJson(
+      droppedPathOf(doc.fileHash),
+      [...(parsed.dropped || []), ...withoutToc.dropped].slice(0, 50)
+    );
     await store.updateDoc(docId, {
-      status: "chunked",
+      status: "embedding",
       error_msg: null,
       page_count: parsed.pageCount,
+    });
+
+    const stored = await store.listChunks(docId, doc.userId);
+    if (stored.length !== chunks.length) {
+      throw new Error("写入的切块数量和读回的不一致");
+    }
+    const vectors = await embedChunks(stored, { stockName: doc.stockName });
+    await upsertChunks(doc, stored, vectors);
+    await store.updateDoc(docId, {
+      status: "embedded",
+      error_msg: null,
+      embed_model: process.env.EMBED_MODEL || "BAAI/bge-m3",
     });
   } catch (err) {
     console.error(`研报入库失败 doc=${docId}:`, err);

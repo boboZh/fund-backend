@@ -9,6 +9,7 @@ const { parseResearchMeta } = require("../services/rag/meta");
 const { RESEARCH_DIR, pdfPathOf } = require("../services/rag/paths");
 const store = require("../services/rag/store");
 const { ingestDoc, readDropped } = require("../services/rag/ingest");
+const { deleteByDoc } = require("../services/rag/qdrant");
 
 const router = express.Router();
 fse.ensureDirSync(RESEARCH_DIR);
@@ -225,7 +226,10 @@ router.post("/docs/:id/retry", authMiddleware, async (req, res) => {
 
 router.delete("/docs/:id", authMiddleware, async (req, res) => {
   try {
-    const result = await store.deleteDoc(req.params.id, req.userId);
+    const doc = await store.getDoc(req.params.id, req.userId);
+    if (!doc) return res.status(404).json(new ErrorModel("研报不存在"));
+    await deleteByDoc(doc.id, doc.userId);
+    const result = await store.deleteDoc(doc.id, req.userId);
     if (!result.affectedRows)
       return res.status(404).json(new ErrorModel("研报不存在"));
     res.json(new SuccessModel("已删除"));
