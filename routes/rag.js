@@ -10,6 +10,7 @@ const { RESEARCH_DIR, pdfPathOf } = require("../services/rag/paths");
 const store = require("../services/rag/store");
 const { ingestDoc, readDropped } = require("../services/rag/ingest");
 const { deleteByDoc } = require("../services/rag/qdrant");
+const { retrieve } = require("../services/rag/retrieve");
 
 const router = express.Router();
 fse.ensureDirSync(RESEARCH_DIR);
@@ -221,6 +222,33 @@ router.post("/docs/:id/retry", authMiddleware, async (req, res) => {
   } catch (err) {
     console.error("rag-retry:", err);
     res.status(500).json(new ErrorModel("重试失败"));
+  }
+});
+
+router.post("/search", authMiddleware, async (req, res) => {
+  const query = String(req.body.query || "").trim();
+  if (!query) return res.status(400).json(new ErrorModel("请输入问题"));
+  if (query.length > 2000) return res.status(400).json(new ErrorModel("问题太长"));
+
+  const controller = new AbortController();
+  const onClose = () => {
+    if (!res.writableEnded) controller.abort();
+  };
+  res.on("close", onClose);
+  try {
+    const result = await retrieve({
+      query,
+      userId: req.userId,
+      topK: req.body.topK,
+      mode: "vector",
+      signal: controller.signal,
+    });
+    if (!res.writableEnded) res.json(new SuccessModel(result));
+  } catch (err) {
+    if (controller.signal.aborted || res.writableEnded) return;
+    console.error("rag-search:", err);
+    const message = String(err.message || "检索失败").slice(0, 200);
+    res.status(500).json(new ErrorModel(message));
   }
 });
 
