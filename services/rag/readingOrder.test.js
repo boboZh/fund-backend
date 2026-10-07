@@ -4,6 +4,7 @@ const {
   assertNumbersFromSource,
   indexItems,
   dropTrailingBoilerplate,
+  dropToc,
 } = require("./readingOrder");
 
 const item = (id, text, x, y, width = 40) => ({ id, text, x, y, width });
@@ -31,16 +32,28 @@ describe("模型阅读顺序", () => {
         { role: "sidebar", lines: [[1, 2]] },
         { role: "heading", lines: [[6]] },
         { role: "paragraph", lines: [[3, 4], [5]] },
-        { role: "table", lines: [[7, 8, 9], [12, 10, 11]] },
+        {
+          role: "table",
+          lines: [
+            [7, 8, 9],
+            [12, 10, 11],
+          ],
+        },
       ],
-      1,
+      1
     );
-    const summary = doc.paragraphs.find((paragraph) => paragraph.kind === "summary");
+    const summary = doc.paragraphs.find(
+      (paragraph) => paragraph.kind === "summary"
+    );
     const body = doc.paragraphs.find((paragraph) => paragraph.kind === "text");
-    const table = doc.paragraphs.find((paragraph) => paragraph.kind === "table");
+    const table = doc.paragraphs.find(
+      (paragraph) => paragraph.kind === "table"
+    );
     expect(summary.text).toContain("119.81");
     expect(summary.text).toContain("当前股价（元）");
-    expect(body.text).toBe("机柜向超节点集群方向发展，这对超节点内部提出了更高的要求。");
+    expect(body.text).toBe(
+      "机柜向超节点集群方向发展，这对超节点内部提出了更高的要求。"
+    );
     expect(body.text).not.toContain("119.81");
     expect(body.heading).toBe("投资要点");
     expect(table.text).toContain("2025A | 2026E");
@@ -63,10 +76,14 @@ describe("模型阅读顺序", () => {
           text: "目标价 999.99",
         },
       ],
-      1,
+      1
     );
-    const body = doc.paragraphs.find((paragraph) => paragraph.kind === "text").text;
-    const summary = doc.paragraphs.find((paragraph) => paragraph.kind === "summary").text;
+    const body = doc.paragraphs.find(
+      (paragraph) => paragraph.kind === "text"
+    ).text;
+    const summary = doc.paragraphs.find(
+      (paragraph) => paragraph.kind === "summary"
+    ).text;
     expect(summary).toContain("119.81");
     expect(body).not.toContain("119.81");
     expect(body).not.toContain("999.99");
@@ -78,7 +95,7 @@ describe("模型阅读顺序", () => {
     const doc = assemblePage(
       [item(1, "主业稳定。", 40, 700, 80)],
       [{ role: "paragraph", lines: [[1, 99], [1]] }],
-      2,
+      2
     );
     expect(doc.paragraphs).toHaveLength(1);
     expect(doc.paragraphs[0].text).toBe("主业稳定。");
@@ -97,14 +114,16 @@ describe("模型阅读顺序", () => {
         { role: "paragraph", lines: [[1, 2]] },
         { role: "table", lines: [[3, 4]] },
       ],
-      1,
+      1
     );
     expect(doc.paragraphs[0].text).toBe("2026-09-30");
     expect(doc.paragraphs[1].text).toBe("1,741 | 2,535");
   });
 
   test("可以从代码块里取出 blocks", () => {
-    const blocks = parseBlocks('说明\n```json\n{"blocks":[{"role":"paragraph","lines":[[1]]}]}\n```');
+    const blocks = parseBlocks(
+      '说明\n```json\n{"blocks":[{"role":"paragraph","lines":[[1]]}]}\n```'
+    );
     expect(blocks[0].role).toBe("paragraph");
   });
 
@@ -123,12 +142,59 @@ describe("模型阅读顺序", () => {
     ]);
   });
 
+  test("目录跨页且没有目录标题时，点线页码和被拆开的半行都去掉", () => {
+    const { paragraphs, dropped } = dropToc([
+      {
+        page: 2,
+        text: "1、国家级稀缺煤油气资源................4",
+        kind: "text",
+        heading: "目录",
+      },
+      {
+        page: 3,
+        text: "图30：2026H1公司天然气产量3.64亿",
+        kind: "text",
+        heading: "正文",
+      },
+      {
+        page: 3,
+        text: "方................................15",
+        kind: "text",
+        heading: "正文",
+      },
+      { page: 4, text: "公司深耕主业。", kind: "text", heading: "公司概况" },
+    ]);
+    expect(paragraphs.map((paragraph) => paragraph.text)).toEqual([
+      "公司深耕主业。",
+    ]);
+    expect(dropped.map((item) => item.reason)).toEqual([
+      "目录",
+      "目录",
+      "目录",
+    ]);
+  });
+
   test("评级说明入库，免责条款及其后的内容不入库", () => {
     const { paragraphs } = dropTrailingBoilerplate([
       { page: 2, text: "维持买入评级。", kind: "text", heading: "盈利预测" },
-      { page: 4, text: "投资建议 | 买入 | >20%", kind: "table", heading: "证券投资评级说明" },
-      { page: 5, text: "司不会因接收人收到本报告而视其为客户。本公司不承担任何法律责任。", kind: "text", heading: null },
-      { page: 5, text: "本报告版权仅为华鑫证券所有。", kind: "text", heading: null },
+      {
+        page: 4,
+        text: "投资建议 | 买入 | >20%",
+        kind: "table",
+        heading: "证券投资评级说明",
+      },
+      {
+        page: 5,
+        text: "司不会因接收人收到本报告而视其为客户。本公司不承担任何法律责任。",
+        kind: "text",
+        heading: null,
+      },
+      {
+        page: 5,
+        text: "本报告版权仅为华鑫证券所有。",
+        kind: "text",
+        heading: null,
+      },
     ]);
     expect(paragraphs.map((paragraph) => paragraph.text)).toEqual([
       "维持买入评级。",
@@ -136,7 +202,24 @@ describe("模型阅读顺序", () => {
     ]);
   });
 
+  test("两个年份碎片不会粘成原文里没有的数字", () => {
+    const doc = assemblePage(
+      [
+        item(1, "2022", 40, 500, 28),
+        item(2, "650", 70, 500, 24),
+        item(3, "年示范50辆，2023-2025年", 110, 500, 150),
+      ],
+      [{ role: "paragraph", lines: [[1, 2, 3]] }],
+      1
+    );
+    expect(doc.paragraphs[0].text).toContain("2022");
+    expect(doc.paragraphs[0].text).toContain("650");
+    expect(doc.paragraphs[0].text).not.toContain("2022650");
+  });
+
   test("原文没有的数字会被拒绝", () => {
-    expect(() => assertNumbersFromSource("目标价 119.82", "目标价 119.81")).toThrow(/119\.82/);
+    expect(() =>
+      assertNumbersFromSource("目标价 119.82", "目标价 119.81")
+    ).toThrow(/119\.82/);
   });
 });

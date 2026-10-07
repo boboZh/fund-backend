@@ -148,6 +148,7 @@ router.post("/docs", authMiddleware, async (req, res) => {
       filePath: `public/uploads/research/${fileHash}.pdf`,
       ...meta,
     });
+    // 异步解析文档并切块
     ingestDoc(id);
     const doc = await store.getDoc(id, req.userId);
     res.json(new SuccessModel({ doc, duplicate: false }));

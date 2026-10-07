@@ -18,7 +18,7 @@ const SYSTEM_PROMPT = `你是研报版面的阅读顺序整理器。用户给出
 
 规则：
 1. lines 里只能出现输入中的 id。不要输出 t、text 或任何数字的誊写。
-2. 每个 id 最多出现一次。页眉、页脚、页码、免责声明、免责条款不要放进 blocks。证券投资评级说明和其中的评级表格要保留，买入、增持对应的涨幅不能丢掉。
+2. 每个 id 最多出现一次。页眉、页脚、页码、目录、免责声明、免责条款不要放进 blocks。证券投资评级说明和其中的评级表格要保留，买入、增持对应的涨幅不能丢掉。
 3. 左侧或页首的数据卡（评级、股价、市值、股本、成交额）整块放进一个 sidebar，先输出 sidebar，再输出右栏。
 4. 同一行上如果既有左侧短数字、又有右侧句子，数字放进 sidebar，句子放进 paragraph。例如 id 8 是「当前股价（元）」、id 9 是「119.81」、id 10 是「方向发展，」，则 sidebar 使用 [8,9]，paragraph 使用 [10]，不要把 9 和 10 放进同一个 paragraph。
 5. 右栏按自然段拆开，一个自然段一个 paragraph。段内每一视觉行是 lines 里的一个数组，行与行按阅读顺序排列。
@@ -106,9 +106,11 @@ const joinPieces = (pieces, role) => {
     if (prev) {
       const gap = piece.x - (prev.x + prev.width);
       if (role === "paragraph" || role === "heading") {
+        const digitsTouch = /\d$/.test(prev.text) && /^\d/.test(piece.text);
         const ascii =
           /[A-Za-z0-9]$/.test(prev.text) && /^[A-Za-z0-9]/.test(piece.text);
-        if (ascii && gap > 2) text += " ";
+        // 2022 和 650 贴在一起会被读成 2022650，碎片之间的数字必须隔开
+        if (digitsTouch || (ascii && gap > 2)) text += " ";
       } else if (gap > 8) {
         text += " | ";
       }
@@ -174,10 +176,13 @@ const assemblePage = (items, rawBlocks, pageNumber) => {
       .filter((line) => line.text);
     const joiner =
       block.role === "paragraph" || block.role === "heading" ? "" : "\n";
-    const text = lines
-      .map((line) => line.text)
-      .join(joiner)
-      .trim();
+    let text = "";
+    lines.forEach((line) => {
+      if (text && joiner) text += joiner;
+      else if (text && /\d$/.test(text) && /^\d/.test(line.text)) text += " ";
+      text += line.text;
+    });
+    text = text.trim();
     assertNumbersFromSource(text, lines.map((line) => line.source).join(""));
     return text;
   };
@@ -240,6 +245,49 @@ const pagePrompt = (page, items) => {
     t: item.text,
   }));
   return `页码 ${page.pageNumber}，页面宽 ${Math.round(page.width || 0)}，高 ${Math.round(page.height || 0)}。y 越大越靠上。\n${JSON.stringify(payload)}`;
+};
+
+const tocTitle = (value) => String(value || "").replace(/[\s#■▌]/g, "");
+const TOC_LEADER_RE =
+  /(?:\.{3,}|．{3,}|·{3,}|‧{3,}|…{2,}|⋯{2,}|(?:\.\s*){3,})\s*\d{1,3}/;
+
+const hasTocLeader = (paragraph) => {
+  const title = tocTitle(paragraph.heading);
+  if (title === "目录" || (title.endsWith("目录") && title.length <= 6))
+    return true;
+  return TOC_LEADER_RE.test(paragraph.text || "");
+};
+
+// 目录可能跨页，后面几页没有「目录」标题。点线后面的页码就能认出条目；换行拆开的半句和它留在同一页，一并去掉。
+const dropToc = (paragraphs) => {
+  const leader = paragraphs.map(hasTocLeader);
+  const drop = leader.slice();
+  paragraphs.forEach((paragraph, index) => {
+    if (drop[index]) return;
+    const text = paragraph.text || "";
+    const fragment = text.length <= 120 && !/[。！？]/.test(text);
+    if (!fragment) return;
+    const beside = [index - 1, index + 1].some((other) => {
+      const neighbor = paragraphs[other];
+      return neighbor && leader[other] && neighbor.page === paragraph.page;
+    });
+    if (beside) drop[index] = true;
+  });
+
+  const kept = [];
+  const dropped = [];
+  paragraphs.forEach((paragraph, index) => {
+    if (!drop[index]) {
+      kept.push(paragraph);
+      return;
+    }
+    dropped.push({
+      page: paragraph.page,
+      reason: "目录",
+      text: paragraph.text.slice(0, 80),
+    });
+  });
+  return { paragraphs: kept, dropped };
 };
 
 // 免责条款是律所套话，从这里起到文末丢掉。评级说明要留下，否则「买入」对应的涨幅无法检索。
@@ -317,7 +365,8 @@ const orderDocument = async (pages, { client, onPage } = {}) => {
     paragraphs.push(...assembled.paragraphs);
     dropped.push(...assembled.dropped);
   }
-  const trimmed = dropTrailingBoilerplate(paragraphs);
+  const withoutToc = dropToc(paragraphs);
+  const trimmed = dropTrailingBoilerplate(withoutToc.paragraphs);
   const charCount = trimmed.paragraphs.reduce(
     (sum, paragraph) => sum + paragraph.text.length,
     0
@@ -326,7 +375,10 @@ const orderDocument = async (pages, { client, onPage } = {}) => {
     version: LAYOUT_VERSION,
     pageCount: pages.length,
     paragraphs: trimmed.paragraphs,
-    dropped: [...dropped, ...trimmed.dropped].slice(0, 50),
+    dropped: [...dropped, ...withoutToc.dropped, ...trimmed.dropped].slice(
+      0,
+      50
+    ),
     charCount,
   };
 };
@@ -337,6 +389,7 @@ module.exports = {
   indexItems,
   assemblePage,
   dropTrailingBoilerplate,
+  dropToc,
   orderDocument,
   assertNumbersFromSource,
 };

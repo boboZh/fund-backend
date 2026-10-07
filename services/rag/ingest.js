@@ -1,7 +1,7 @@
 const fse = require("fs-extra");
 const { extractPdfPages } = require("./parsePdf");
 const { splitParagraphs } = require("./chunk");
-const { orderDocument, LAYOUT_VERSION } = require("./readingOrder");
+const { orderDocument, LAYOUT_VERSION, dropToc } = require("./readingOrder");
 const { pdfPathOf, droppedPathOf, layoutPathOf } = require("./paths");
 const store = require("./store");
 
@@ -105,7 +105,8 @@ const ingestDoc = async (docId) => {
     }
 
     const parsed = await layoutDoc(doc, await fse.readFile(filePath));
-    const chunks = splitParagraphs(parsed.paragraphs, {
+    const withoutToc = dropToc(parsed.paragraphs);
+    const chunks = splitParagraphs(withoutToc.paragraphs, {
       maxChars: doc.maxChars,
       overlapParagraphs: doc.overlapParagraphs,
     });
@@ -115,7 +116,7 @@ const ingestDoc = async (docId) => {
     }
 
     await store.replaceChunks(docId, doc.userId, chunks);
-    await fse.writeJson(droppedPathOf(doc.fileHash), parsed.dropped);
+    await fse.writeJson(droppedPathOf(doc.fileHash), [...(parsed.dropped || []), ...withoutToc.dropped].slice(0, 50));
     await store.updateDoc(docId, {
       status: "chunked",
       error_msg: null,
