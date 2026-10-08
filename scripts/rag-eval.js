@@ -1,8 +1,6 @@
-const { COLLECTION, getClient } = require("../services/rag/qdrant");
-const { embedQuery } = require("../services/rag/embed");
-const store = require("../services/rag/store");
+const { retrieve } = require("../services/rag/retrieve");
 
-// 向量检索的基线。同一组题以后每加一路检索都再跑一遍，看正确片段进没进前 k 名。
+// 同一组题跑向量、关键词、混合。混合的 recall@5 用来和两条单路对照。
 // 用法: node scripts/rag-eval.js <user_id>
 const ownerId = Number(process.argv[2]);
 const LIMIT = 5;
@@ -72,12 +70,33 @@ const containsFact = (content, fact) => {
   return compact(content).includes(compact(fact));
 };
 
-const rankOf = (points, byId, mustContain) => {
-  const index = points.findIndex((point) => {
-    const row = byId.get(Number(point.id));
-    return row && containsFact(row.content, mustContain);
-  });
-  return index === -1 ? null : index + 1;
+const MODES = [
+  ["vector", "向量"],
+  ["keyword", "关键词"],
+  ["hybrid", "混合"],
+];
+
+const runMode = async (mode) => {
+  const hits = Object.fromEntries(KS.map((k) => [k, 0]));
+  const missed = [];
+
+  for (const item of questions) {
+    const result = await retrieve({
+      query: item.question,
+      userId: ownerId,
+      topK: LIMIT,
+      mode,
+      stockCode: item.stockCode || undefined,
+    });
+    const index = result.hits.findIndex((hit) => containsFact(hit.content, item.mustContain));
+    const rank = index === -1 ? null : index + 1;
+    KS.forEach((k) => {
+      if (rank && rank <= k) hits[k] += 1;
+    });
+    if (!rank) missed.push(item.question);
+  }
+
+  return { hits, missed };
 };
 
 const run = async () => {
@@ -86,44 +105,27 @@ const run = async () => {
     process.exit(1);
   }
 
-  const hits = Object.fromEntries(KS.map((k) => [k, 0]));
-  const missed = [];
-
-  for (const item of questions) {
-    const must = [{ key: "user_id", match: { value: ownerId } }];
-    if (item.stockCode) {
-      must.push({ key: "stock_code", match: { value: item.stockCode } });
-    }
-    const vector = await embedQuery(item.question);
-    const result = await getClient().query(COLLECTION, {
-      query: vector,
-      limit: LIMIT,
-      filter: { must },
-      with_payload: false,
-    });
-    const points = Array.isArray(result && result.points) ? result.points : [];
-    const rows = await store.listChunksByIds(
-      ownerId,
-      points.map((point) => point.id)
-    );
-    const byId = new Map(rows.map((row) => [Number(row.id), row]));
-    const rank = rankOf(points, byId, item.mustContain);
-
-    KS.forEach((k) => {
-      if (rank && rank <= k) hits[k] += 1;
-    });
-    if (!rank) missed.push(item.question);
-  }
-
   const total = questions.length;
-  KS.forEach((k) => {
-    const recall = (hits[k] / total).toFixed(2);
-    console.log(`recall@${k}: ${hits[k]}/${total} = ${recall}`);
-  });
-  if (missed.length) {
-    console.log("前 5 名未命中:");
-    missed.forEach((question) => console.log(`- ${question}`));
+  const recallAt5 = {};
+
+  for (const [mode, label] of MODES) {
+    const { hits, missed } = await runMode(mode);
+    console.log(`\n${label}`);
+    KS.forEach((k) => {
+      const recall = (hits[k] / total).toFixed(2);
+      console.log(`recall@${k}: ${hits[k]}/${total} = ${recall}`);
+    });
+    recallAt5[mode] = hits[5];
+    if (missed.length) {
+      console.log("前 5 名未命中:");
+      missed.forEach((question) => console.log(`- ${question}`));
+    }
   }
+
+  console.log("\nrecall@5 对照:");
+  MODES.forEach(([mode, label]) => {
+    console.log(`${label}: ${recallAt5[mode]}/${total}`);
+  });
 };
 
 run().then(() => process.exit(0));

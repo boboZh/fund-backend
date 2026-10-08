@@ -135,6 +135,49 @@ const listChunksByIds = async (userId, ids) => {
 const deleteDoc = async (id, userId) =>
   execStrict(`DELETE FROM research_docs WHERE id = ? AND user_id = ?`, [id, userId]);
 
+/**
+ * 入参是用户、去掉股票代码后的检索词、可选股票代码、条数。出参按全文分从高到低，最多 limit 条。
+ * 这一路的分是自然语言模式的 TF-IDF，和余弦分不在一个量纲上，调用方只用名次。
+ * 能确定股票时先收成这家公司的 doc_id，再取全文前 N 条。过滤和召回同时做，正确公司的段落才会进候选。
+ */
+const searchChunksByKeyword = async (userId, { text, stockCode, limit }) => {
+  const queryText = String(text || "").trim();
+  if (!queryText) return [];
+  const ownerId = Number(userId);
+  // 条数来自检索参数，已经收成 1–20 的整数。字面量拼进 SQL，是因为部分 MySQL 版本的预处理语句不接受 LIMIT 占位符。
+  const size = Math.min(20, Math.max(1, Math.round(Number(limit) || 20)));
+
+  const params = [queryText, ownerId];
+  let docClause = "";
+  if (stockCode) {
+    const docs = await execStrict(
+      `SELECT id FROM research_docs WHERE user_id = ? AND stock_code = ?`,
+      [ownerId, stockCode]
+    );
+    const docIds = docs
+      .map((doc) => Number(doc.id))
+      .filter((id) => Number.isInteger(id) && id > 0);
+    if (!docIds.length) return [];
+    docClause = ` AND c.doc_id IN (${docIds.map(() => "?").join(", ")})`;
+    params.push(...docIds);
+  }
+  params.push(queryText);
+
+  return execStrict(
+    `SELECT c.id, c.doc_id, c.chunk_type, c.page_start, c.page_end, c.heading, c.content,
+            d.stock_code, d.stock_name, d.title, d.org,
+            DATE_FORMAT(d.report_date, '%Y-%m-%d') AS report_date,
+            MATCH(c.content) AGAINST (? IN NATURAL LANGUAGE MODE) AS score
+     FROM research_chunks c
+     JOIN research_docs d ON d.id = c.doc_id
+     WHERE c.user_id = ?${docClause}
+       AND MATCH(c.content) AGAINST (? IN NATURAL LANGUAGE MODE)
+     ORDER BY score DESC
+     LIMIT ${size}`,
+    params
+  );
+};
+
 const recoverStuckDocs = async () =>
   execStrict(
     `UPDATE research_docs SET status = 'failed', error_msg = '服务重启中断，请重试' WHERE status IN ('parsing', 'embedding')`,
@@ -150,6 +193,7 @@ module.exports = {
   replaceChunks,
   listChunks,
   listChunksByIds,
+  searchChunksByKeyword,
   deleteDoc,
   recoverStuckDocs,
 };

@@ -229,6 +229,14 @@ router.post("/search", authMiddleware, async (req, res) => {
   const query = String(req.body.query || "").trim();
   if (!query) return res.status(400).json(new ErrorModel("请输入问题"));
   if (query.length > 2000) return res.status(400).json(new ErrorModel("问题太长"));
+  const mode = req.body.mode == null || req.body.mode === "" ? "vector" : String(req.body.mode);
+  if (!["vector", "keyword", "hybrid"].includes(mode)) {
+    return res.status(400).json(new ErrorModel("检索模式只能是向量、关键词或混合"));
+  }
+  const stockCode = req.body.stockCode == null ? "" : String(req.body.stockCode).trim();
+  if (stockCode && !/^\d{6}$/.test(stockCode)) {
+    return res.status(400).json(new ErrorModel("股票代码需要是 6 位数字"));
+  }
 
   const controller = new AbortController();
   const onClose = () => {
@@ -240,7 +248,8 @@ router.post("/search", authMiddleware, async (req, res) => {
       query,
       userId: req.userId,
       topK: req.body.topK,
-      mode: "vector",
+      mode,
+      stockCode,
       signal: controller.signal,
     });
     if (!res.writableEnded) res.json(new SuccessModel(result));
