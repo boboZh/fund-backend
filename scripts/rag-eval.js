@@ -76,6 +76,10 @@ const questions = [
     mustContain: "617.99",
     reject: true,
   },
+  {
+    question: "长鑫科技的投资逻辑",
+    reject: true,
+  },
 ];
 
 // 数字单独成段才算命中，避免 970 撞上 1970、-97 撞上 -970。

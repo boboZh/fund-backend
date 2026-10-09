@@ -133,6 +133,29 @@ describe("向量检索", () => {
     ]);
   });
 
+  test("带了起始日期时，向量搜索按 report_date 一起过滤", async () => {
+    mockQuery.mockResolvedValue({ points: [] });
+    store.listChunksByIds.mockResolvedValue([]);
+
+    await retrieve({
+      query: "最新的研报怎么说",
+      userId: 8,
+      dateFrom: "2026-01-01",
+    });
+
+    expect(mockQuery.mock.calls[0][1].filter.must).toEqual([
+      { key: "user_id", match: { value: 8 } },
+      { key: "report_date", range: { gte: 20260101 } },
+    ]);
+  });
+
+  test("起始日期不是 YYYY-MM-DD 时拒绝", async () => {
+    await expect(
+      retrieve({ query: "目标价", userId: 8, dateFrom: "2026/01/01" })
+    ).rejects.toThrow("起始日期需要是 YYYY-MM-DD");
+    expect(mockEmbedQuery).not.toHaveBeenCalled();
+  });
+
   test("不认识的模式直接拒绝", async () => {
     await expect(retrieve({ query: "目标价", userId: 8, mode: "rerank" })).rejects.toThrow(
       "检索模式只能是"
@@ -155,6 +178,7 @@ describe("关键词检索", () => {
     expect(store.searchChunksByKeyword).toHaveBeenCalledWith(8, {
       text: "增持",
       stockCode: null,
+      dateFrom: null,
       limit: 4,
     });
     expect(result.hits.map((hit) => [hit.rank, hit.id, hit.score, hit.keywordRank, hit.vectorRank])).toEqual([
@@ -175,6 +199,7 @@ describe("关键词检索", () => {
     expect(store.searchChunksByKeyword).toHaveBeenCalledWith(8, {
       text: "广汇能源 的产能怎么看",
       stockCode: "600256",
+      dateFrom: null,
       limit: 5,
     });
     expect(result.keywordQuery).toBe("广汇能源 的产能怎么看");
@@ -189,6 +214,25 @@ describe("关键词检索", () => {
     expect(store.searchChunksByKeyword).toHaveBeenCalledWith(8, {
       text: "比较 600256 和 000001 的目标价",
       stockCode: null,
+      dateFrom: null,
+      limit: 5,
+    });
+  });
+
+  test("带了起始日期时，全文只查这一天及之后的文档", async () => {
+    store.searchChunksByKeyword.mockResolvedValue([]);
+
+    await retrieve({
+      query: "目标价",
+      userId: 8,
+      mode: "keyword",
+      dateFrom: "2026-01-01",
+    });
+
+    expect(store.searchChunksByKeyword).toHaveBeenCalledWith(8, {
+      text: "目标价",
+      stockCode: null,
+      dateFrom: "2026-01-01",
       limit: 5,
     });
   });
@@ -214,6 +258,7 @@ describe("关键词检索", () => {
     expect(store.searchChunksByKeyword).toHaveBeenCalledWith(8, {
       text: "目标价是多少",
       stockCode: "600256",
+      dateFrom: null,
       limit: 5,
     });
   });
@@ -247,6 +292,7 @@ describe("混合检索", () => {
     expect(store.searchChunksByKeyword).toHaveBeenCalledWith(8, {
       text: "的目标价",
       stockCode: "600256",
+      dateFrom: null,
       limit: 20,
     });
     // 2: 向量第 2 + 关键词第 1；1: 向量第 1 + 关键词第 3；4 只有关键词；3 只有向量。

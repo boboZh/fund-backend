@@ -140,7 +140,7 @@ const deleteDoc = async (id, userId) =>
  * 这一路的分是自然语言模式的 TF-IDF，和余弦分不在一个量纲上，调用方只用名次。
  * 能确定股票时先收成这家公司的 doc_id，再取全文前 N 条。过滤和召回同时做，正确公司的段落才会进候选。
  */
-const searchChunksByKeyword = async (userId, { text, stockCode, limit }) => {
+const searchChunksByKeyword = async (userId, { text, stockCode, dateFrom, limit }) => {
   const queryText = String(text || "").trim();
   if (!queryText) return [];
   const ownerId = Number(userId);
@@ -160,6 +160,11 @@ const searchChunksByKeyword = async (userId, { text, stockCode, limit }) => {
     if (!docIds.length) return [];
     docClause = ` AND c.doc_id IN (${docIds.map(() => "?").join(", ")})`;
     params.push(...docIds);
+  }
+  // 起始日期和股票代码一起收窄文档，全文只在这些文档里取前 N 条。
+  if (dateFrom) {
+    docClause += ` AND d.report_date >= ?`;
+    params.push(dateFrom);
   }
   params.push(queryText);
 

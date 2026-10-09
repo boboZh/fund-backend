@@ -74,6 +74,26 @@ const scoreOf = (value) => {
   return Number.isFinite(score) ? score : 0;
 };
 
+// 空字符串表示不限日期。非法日期直接拒绝，避免静默放宽成「全部研报」。
+const dateFromOf = (value) => {
+  if (value == null || String(value).trim() === "") return null;
+  const text = String(value).trim();
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (!match) throw new Error("起始日期需要是 YYYY-MM-DD");
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  if (
+    parsed.getUTCFullYear() !== year ||
+    parsed.getUTCMonth() !== month - 1 ||
+    parsed.getUTCDate() !== day
+  ) {
+    throw new Error("起始日期需要是 YYYY-MM-DD");
+  }
+  return text;
+};
+
 // 空字符串表示这次不设阈值。0 是合法阈值，重排分低于 0 的段落会被丢掉。
 const minScoreOf = (value) => {
   if (value == null || value === "") return null;
@@ -120,12 +140,19 @@ const chunkHit = (row, fields) => ({
  * 入参是问题、用户、股票代码、条数和 AbortSignal。出参按余弦相似度排列，原文来自 MySQL。
  * Qdrant 里有、MySQL 里已经没有的点丢掉，名次在剩下的结果里重新排。
  */
-const vectorRecall = async ({ query, ownerId, stockCode, limit, signal }) => {
+const vectorRecall = async ({ query, ownerId, stockCode, dateFrom, limit, signal }) => {
   const vector = await embedQuery(query, { signal });
   throwIfAborted(signal);
 
   const must = [{ key: "user_id", match: { value: ownerId } }];
   if (stockCode) must.push({ key: "stock_code", match: { value: stockCode } });
+  // 和股票代码一样，日期要在搜索时过滤。先取全局 top-k 再丢掉旧研报，正确公司的新段落可能根本没进候选。
+  if (dateFrom) {
+    must.push({
+      key: "report_date",
+      range: { gte: Number(dateFrom.replace(/-/g, "")) },
+    });
+  }
 
   const result = await getClient().query(COLLECTION, {
     query: vector,
@@ -161,15 +188,16 @@ const vectorRecall = async ({ query, ownerId, stockCode, limit, signal }) => {
 
 /**
  * 关键字检索（mysql）
- * 入参是问题、用户、股票代码和条数。出参是全文命中，以及实际送进全文索引的文本。
- * 过滤用的股票代码先从问题里拿掉；拿掉后组不出词，就不再查全文。
+ * 入参是问题、用户、股票代码、起始日期和条数。出参是全文命中，以及实际送进全文索引的文本。
+ * 过滤用的股票代码先从问题里拿掉；拿掉后组不出词，就不再查全文。有起始日期时，只查这一天及之后的文档。
  */
-const keywordRecall = async ({ query, ownerId, stockCode, limit }) => {
+const keywordRecall = async ({ query, ownerId, stockCode, dateFrom, limit }) => {
   const text = keywordTextOf(query, stockCode);
   if (!hasKeywordText(text)) return { text, hits: [] };
   const rows = await store.searchChunksByKeyword(ownerId, {
     text,
     stockCode,
+    dateFrom,
     limit,
   });
   const hits = rows.map((row, index) => {
@@ -298,7 +326,7 @@ const rerankHits = async ({ query, hits, topK, minScore, signal }) => {
 /**
  * 入参是问题、当前用户、topK、mode（vector / keyword / hybrid）、是否重排、阈值、可选的股票代码和 AbortSignal。
  * 显式传入的六位代码优先于从问题里识别出来的代码。出参是按该模式排好的片段，原文来自 MySQL。
- * 1. 解析过滤用的股票代码。向量按 payload 过滤，关键词按 doc_id 过滤。
+ * 1. 解析过滤用的股票代码和起始日期。向量按 payload 过滤，关键词按文档过滤。带了 dateFrom 就只留这一天及之后的研报。
  * 2. vector、keyword 各按自己的分取 topK。hybrid 两路各先取 20 条，RRF 合并后再截成 topK。
  * 3. 打开重排时，召回放宽到 20 条。hybrid 取融合后的前 20 条，和问题一起重排，再取 topK。
  * 4. 重排分低于阈值的标 dropped，不放进 hits。ranked 仍保留这些行，实验台用来置灰。
@@ -311,6 +339,7 @@ const retrieve = async ({
   rerank = false,
   minScore,
   stockCode,
+  dateFrom,
   signal,
 } = {}) => {
   if (!MODES.has(mode))
@@ -322,6 +351,7 @@ const retrieve = async ({
 
   const limit = topKOf(topK);
   const code = filterStockCode(query, stockCode);
+  const since = dateFromOf(dateFrom);
   const threshold = minScoreOf(minScore);
   const rerankOn = Boolean(rerank);
   // 重排要看到名次靠后的正确段，所以召回先取 20 条，而不是直接取 topK。
@@ -336,6 +366,7 @@ const retrieve = async ({
       query,
       ownerId,
       stockCode: code,
+      dateFrom: since,
       limit: recallLimit,
       signal,
     });
@@ -346,6 +377,7 @@ const retrieve = async ({
       query,
       ownerId,
       stockCode: code,
+      dateFrom: since,
       limit: recallLimit,
     });
     keywordHits = keyword.hits;
