@@ -8,7 +8,7 @@ const MAX_TOP_K = 20;
 // 10 道有答案、3 道无答案上，重排分在这里分开。比较是 score < minScore。
 // 下沿能让无答案题一条都不留；上沿是最弱正确段的分数，再高就会把它丢掉。
 // 分数高于上沿的是更强的命中，要留下。默认取下沿，避免把还没见过的正确段滤掉。
-const MIN_SCORE_MIN = 0.0134;
+const MIN_SCORE_MIN = 0.06;
 const MIN_SCORE_MAX = 0.7419;
 const DEFAULT_MIN_SCORE = MIN_SCORE_MIN;
 // 混合检索先放宽召回，再按名次合并后截断。最终送出的条数仍然是 topK。
@@ -140,7 +140,14 @@ const chunkHit = (row, fields) => ({
  * 入参是问题、用户、股票代码、条数和 AbortSignal。出参按余弦相似度排列，原文来自 MySQL。
  * Qdrant 里有、MySQL 里已经没有的点丢掉，名次在剩下的结果里重新排。
  */
-const vectorRecall = async ({ query, ownerId, stockCode, dateFrom, limit, signal }) => {
+const vectorRecall = async ({
+  query,
+  ownerId,
+  stockCode,
+  dateFrom,
+  limit,
+  signal,
+}) => {
   const vector = await embedQuery(query, { signal });
   throwIfAborted(signal);
 
@@ -191,7 +198,13 @@ const vectorRecall = async ({ query, ownerId, stockCode, dateFrom, limit, signal
  * 入参是问题、用户、股票代码、起始日期和条数。出参是全文命中，以及实际送进全文索引的文本。
  * 过滤用的股票代码先从问题里拿掉；拿掉后组不出词，就不再查全文。有起始日期时，只查这一天及之后的文档。
  */
-const keywordRecall = async ({ query, ownerId, stockCode, dateFrom, limit }) => {
+const keywordRecall = async ({
+  query,
+  ownerId,
+  stockCode,
+  dateFrom,
+  limit,
+}) => {
   const text = keywordTextOf(query, stockCode);
   if (!hasKeywordText(text)) return { text, hits: [] };
   const rows = await store.searchChunksByKeyword(ownerId, {

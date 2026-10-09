@@ -19,7 +19,13 @@ const retrieveModule = require("./rag/retrieve");
 const mockRetrieve = jest.fn();
 retrieveModule.retrieve = mockRetrieve;
 
-const { actions, tools, mergeResearchSources, citationsTrailer } = require("./ai");
+const {
+  actions,
+  tools,
+  mergeResearchSources,
+  citationsTrailer,
+  briefResearchToolContent,
+} = require("./ai");
 const { signalContext } = require("../utils/context");
 
 const tool = tools.find((item) => item.function.name === "search_research_reports");
@@ -187,5 +193,31 @@ describe("citationsTrailer", () => {
     expect(JSON.parse(trailer.slice("[CITATIONS]".length, -"[/CITATIONS]".length))).toEqual({
       sources,
     });
+  });
+});
+
+describe("briefResearchToolContent", () => {
+  test("历史里只留 ref、标题、页码和前 150 字", () => {
+    const full = "甲".repeat(180);
+    const raw = JSON.stringify([
+      {
+        ref: 1,
+        title: "广汇能源",
+        org: "开源证券",
+        reportDate: "2026-10-05",
+        page: 7,
+        heading: "产能",
+        content: full,
+      },
+    ]);
+
+    expect(JSON.parse(briefResearchToolContent(raw))).toEqual([
+      { ref: 1, title: "广汇能源", page: 7, content: "甲".repeat(150) },
+    ]);
+  });
+
+  test("不是研报片段时原样返回", () => {
+    const raw = JSON.stringify({ status: "success", data: [] });
+    expect(briefResearchToolContent(raw)).toBe(raw);
   });
 });

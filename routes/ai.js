@@ -7,6 +7,7 @@ const {
   actions,
   mergeResearchSources,
   citationsTrailer,
+  briefResearchToolContent,
 } = require("../services/ai");
 const {
   sliceMessages,
@@ -298,15 +299,14 @@ router.post("/chat", authMiddleware, async (req, res) => {
               content: toolContents[index],
             });
 
-            // await saveToolCallResultMessage(
-            //   sessionId,
-            //   userId,
-            //   dataList[index],
-            //   id,
-            // );
+            // 本轮模型看到全文。落库的是短文，下一轮才会把它当历史读回来。
+            const storedContent =
+              toolCall.functionName === "search_research_reports"
+                ? briefResearchToolContent(toolContents[index])
+                : toolContents[index];
             brainMemoryBuffer.push({
               fn: saveToolCallResultMessage,
-              args: [sessionId, userId, toolContents[index], id],
+              args: [sessionId, userId, storedContent, id],
             });
           }
         });

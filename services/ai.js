@@ -201,6 +201,28 @@ const citationsTrailer = (sources) => {
   return `[CITATIONS]${JSON.stringify({ sources })}[/CITATIONS]`;
 };
 
+// 工具结果会写进 chat_messages，之后每一轮都重新发给模型。完整片段一轮就有几千字。
+// 历史里只留定位用的短文，追问细节时模型再调一次工具。本轮 messages 里仍是全文。
+const BRIEF_PASSAGE_CHARS = 150;
+
+const briefResearchToolContent = (content) => {
+  let passages;
+  try {
+    passages = JSON.parse(content);
+  } catch {
+    return content;
+  }
+  if (!Array.isArray(passages)) return content;
+  return JSON.stringify(
+    passages.map((passage) => ({
+      ref: passage.ref,
+      title: passage.title,
+      page: passage.page,
+      content: String(passage.content || "").slice(0, BRIEF_PASSAGE_CHARS),
+    }))
+  );
+};
+
 const actions = {
   get_user_portfolio: {
     func: async (args, userId) => {
@@ -353,4 +375,5 @@ module.exports = {
   actions,
   mergeResearchSources,
   citationsTrailer,
+  briefResearchToolContent,
 };
