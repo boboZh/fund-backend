@@ -6,6 +6,7 @@ const {
   tools,
   actions,
   mergeResearchSources,
+  citationsTrailer,
 } = require("../services/ai");
 const {
   sliceMessages,
@@ -129,6 +130,8 @@ router.post("/chat", authMiddleware, async (req, res) => {
 
   let aiResponse = "";
   let finalStatus = "success";
+  // 声明在 try 外面，finally 才能把这一轮的来源和正文一起落库。
+  let sources = [];
   // let isUserMsgSavedToBrain = false;
   const brainMemoryBuffer = []; // 一个完整的会话，会话结束后再全部存入数据库
   const abortController = new AbortController();
@@ -166,7 +169,6 @@ router.post("/chat", authMiddleware, async (req, res) => {
     let isToolCall = false;
     let isFirstChat = true;
     // 模型可能先检索再追问，同一轮里分多次调用。来源要跨这些调用累加，ref 才能连续。
-    let sources = [];
 
     while (isFirstChat || isToolCall) {
       const toolCallMap = {}; // 每轮对话结束后，清空toolCallMap
@@ -329,6 +331,10 @@ router.post("/chat", authMiddleware, async (req, res) => {
         }
       }
 
+      // 不写进 aiResponse。落库的正文和步骤条都不带这段，解析器才能把它从正文里拆开。
+      const trailer = citationsTrailer(sources);
+      if (trailer && !res.writableEnded) res.write(trailer);
+
       res.end();
     }
   } catch (err) {
@@ -351,7 +357,14 @@ router.post("/chat", authMiddleware, async (req, res) => {
     req.off("close", handleClose);
     if (aiResponseValid(aiResponse)) {
       try {
-        await saveUiMsg(sessionId, userId, "ai", aiResponse, finalStatus);
+        await saveUiMsg(
+          sessionId,
+          userId,
+          "ai",
+          aiResponse,
+          finalStatus,
+          sources
+        );
       } catch (dbErr) {
         console.error("ui-ai-response-save-failed: ", dbErr);
       }

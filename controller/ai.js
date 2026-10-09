@@ -79,18 +79,34 @@ const getSessionMessages = async (sessionId) => {
     }) || []
   );
 };
-// 存储用户发的消息-ui层面,
+// 存储用户发的消息-ui层面。sources 是这一轮检索到的研报片段，没有检索时存 NULL。
 const saveUiMsg = async (
   sessionId,
   userId,
   role,
   content,
-  status = "success"
+  status = "success",
+  sources = null
 ) => {
+  const cited = Array.isArray(sources) && sources.length ? JSON.stringify(sources) : null;
   return await exec(
-    `INSERT INTO chat_ui_messages (session_id, user_id, role, content, status) VALUES (?, ?, ?, ?, ?)`,
-    [sessionId, userId, role, content, status]
+    `INSERT INTO chat_ui_messages (session_id, user_id, role, content, status, sources) VALUES (?, ?, ?, ?, ?, ?)`,
+    [sessionId, userId, role, content, status, cited]
   );
+};
+
+// mysql2 有时把 JSON 列解析成对象，有时仍是字符串。列表统一成数组，空的记为 null。
+const sourcesOf = (value) => {
+  if (value == null || value === "") return null;
+  let parsed = value;
+  if (typeof value === "string") {
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      return null;
+    }
+  }
+  return Array.isArray(parsed) && parsed.length ? parsed : null;
 };
 // 获取对话聊天记录
 const getUiMsgList = async (sessionId, page = 1, pageSize = 20) => {
@@ -117,7 +133,7 @@ const getUiMsgList = async (sessionId, page = 1, pageSize = 20) => {
   const list = hasMore ? history.slice(0, pageSize) : history;
   // 返回给前端之前，需要再反转过来，因为聊天界面是从上往下读的
   return {
-    list: list.reverse(),
+    list: list.reverse().map((row) => ({ ...row, sources: sourcesOf(row.sources) })),
     hasMore,
   };
 };

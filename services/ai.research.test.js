@@ -19,7 +19,7 @@ const retrieveModule = require("./rag/retrieve");
 const mockRetrieve = jest.fn();
 retrieveModule.retrieve = mockRetrieve;
 
-const { actions, tools, mergeResearchSources } = require("./ai");
+const { actions, tools, mergeResearchSources, citationsTrailer } = require("./ai");
 const { signalContext } = require("../utils/context");
 
 const tool = tools.find((item) => item.function.name === "search_research_reports");
@@ -169,5 +169,23 @@ describe("mergeResearchSources", () => {
     expect(first.contents[1]).not.toContain('"id"');
     expect(first.contents[2]).toBe("{\"data\":[]}");
     expect(JSON.parse(second.contents[0]).map((item) => item.ref)).toEqual([1, 2]);
+  });
+});
+
+describe("citationsTrailer", () => {
+  test("没有来源时不追加尾标", () => {
+    expect(citationsTrailer([])).toBe("");
+  });
+
+  test("用独立标签包住来源，不走步骤条", () => {
+    const sources = [{ id: 9, ref: 1, title: "标题", content: "甲" }];
+    const trailer = citationsTrailer(sources);
+
+    expect(trailer.startsWith("[CITATIONS]")).toBe(true);
+    expect(trailer.endsWith("[/CITATIONS]")).toBe(true);
+    expect(trailer.includes("[S:")).toBe(false);
+    expect(JSON.parse(trailer.slice("[CITATIONS]".length, -"[/CITATIONS]".length))).toEqual({
+      sources,
+    });
   });
 });

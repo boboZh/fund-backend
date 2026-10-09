@@ -195,6 +195,12 @@ const mergeResearchSources = (sources, calls) => {
   return { sources: next, contents };
 };
 
+// 步骤条以第一个 ] 结束。来源 JSON 里有数组括号，放进 [S:] 会被截断，所以用单独的尾标。
+const citationsTrailer = (sources) => {
+  if (!Array.isArray(sources) || sources.length === 0) return "";
+  return `[CITATIONS]${JSON.stringify({ sources })}[/CITATIONS]`;
+};
+
 const actions = {
   get_user_portfolio: {
     func: async (args, userId) => {
@@ -346,4 +352,5 @@ module.exports = {
   tools,
   actions,
   mergeResearchSources,
+  citationsTrailer,
 };
