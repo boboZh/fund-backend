@@ -10,9 +10,15 @@ jest.mock("./qdrant", () => ({
   getClient: () => ({ query: (...args) => mockQuery(...args) }),
 }));
 
+const mockRerankPassages = jest.fn();
+
 jest.mock("./store", () => ({
   listChunksByIds: jest.fn(),
   searchChunksByKeyword: jest.fn(),
+}));
+
+jest.mock("./rerank", () => ({
+  rerankPassages: (...args) => mockRerankPassages(...args),
 }));
 
 const store = require("./store");
@@ -38,6 +44,7 @@ beforeEach(() => {
   mockQuery.mockReset();
   store.listChunksByIds.mockReset();
   store.searchChunksByKeyword.mockReset();
+  mockRerankPassages.mockReset();
   mockEmbedQuery.mockResolvedValue([0.1, 0.2]);
 });
 
@@ -254,5 +261,74 @@ describe("混合检索", () => {
     expect(result.hits[0].keywordScore).toBe(3.2);
     expect(result.hits[2].vectorScore).toBeNull();
     expect(result.keywordQuery).toBe("的目标价");
+    expect(mockRerankPassages).not.toHaveBeenCalled();
+  });
+
+  test("重排按相关度重排融合结果，低于阈值的不进 hits，但仍留在 ranked", async () => {
+    mockQuery.mockResolvedValue({
+      points: [
+        { id: 1, score: 0.9 },
+        { id: 2, score: 0.8 },
+        { id: 3, score: 0.7 },
+      ],
+    });
+    store.listChunksByIds.mockResolvedValue([row(3, "丙"), row(1, "甲"), row(2, "乙")]);
+    store.searchChunksByKeyword.mockResolvedValue([
+      { ...row(2, "乙"), score: 3.2 },
+      { ...row(4, "丁"), score: 2.1 },
+      { ...row(1, "甲"), score: 1.4 },
+    ]);
+    // 融合顺序是 2、1、4、3。重排把融合第 4 的丙提到第 1。
+    mockRerankPassages.mockResolvedValue([
+      { index: 3, score: 0.91 },
+      { index: 0, score: 0.2 },
+      { index: 1, score: 0.05 },
+      { index: 2, score: 0.04 },
+    ]);
+
+    const result = await retrieve({
+      query: "600256 的目标价",
+      userId: 8,
+      topK: 2,
+      mode: "hybrid",
+      rerank: true,
+      minScore: 0.5,
+    });
+
+    expect(mockQuery.mock.calls[0][1].limit).toBe(20);
+    expect(mockRerankPassages).toHaveBeenCalledWith(
+      "600256 的目标价",
+      ["乙", "甲", "丁", "丙"],
+      { signal: undefined }
+    );
+    expect(result.hits.map((hit) => [hit.id, hit.rerankRank, hit.rrfRank])).toEqual([[3, 1, 4]]);
+    expect(result.ranked.map((hit) => [hit.id, hit.rerankRank, hit.dropped])).toEqual([
+      [3, 1, false],
+      [2, 2, true],
+      [1, 3, true],
+      [4, 4, true],
+    ]);
+    expect(result.ranked[0].rerankScore).toBe(0.91);
+    expect(result.minScore).toBe(0.5);
+  });
+});
+
+describe("重排召回条数", () => {
+  test("向量模式打开重排时先取 20 条，没有候选就不调用重排", async () => {
+    mockQuery.mockResolvedValue({ points: [] });
+    store.listChunksByIds.mockResolvedValue([]);
+
+    const result = await retrieve({
+      query: "目标价",
+      userId: 8,
+      topK: 3,
+      mode: "vector",
+      rerank: true,
+    });
+
+    expect(mockQuery.mock.calls[0][1].limit).toBe(20);
+    expect(mockRerankPassages).not.toHaveBeenCalled();
+    expect(result.hits).toEqual([]);
+    expect(result.ranked).toEqual([]);
   });
 });

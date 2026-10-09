@@ -1,4 +1,5 @@
 const { embedQuery } = require("./embed");
+const { rerankPassages } = require("./rerank");
 const { COLLECTION, getClient } = require("./qdrant");
 const store = require("./store");
 
@@ -67,6 +68,14 @@ const scoreOf = (value) => {
   return Number.isFinite(score) ? score : 0;
 };
 
+// 空字符串表示这次不设阈值。0 是合法阈值，重排分低于 0 的段落会被丢掉。
+const minScoreOf = (value) => {
+  if (value == null || value === "") return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) throw new Error("阈值需要是数字");
+  return parsed;
+};
+
 const throwIfAborted = (signal) => {
   if (!signal || !signal.aborted) return;
   const error = new Error("检索已取消");
@@ -81,6 +90,11 @@ const chunkHit = (row, fields) => ({
   vectorScore: fields.vectorScore ?? null,
   keywordRank: fields.keywordRank ?? null,
   keywordScore: fields.keywordScore ?? null,
+  rrfRank: fields.rrfRank ?? null,
+  rrfScore: fields.rrfScore ?? null,
+  rerankRank: fields.rerankRank ?? null,
+  rerankScore: fields.rerankScore ?? null,
+  dropped: Boolean(fields.dropped),
   id: row.id,
   docId: row.docId,
   chunkType: row.chunkType,
@@ -96,6 +110,7 @@ const chunkHit = (row, fields) => ({
 });
 
 /**
+ * 向量检索（Qdrant）
  * 入参是问题、用户、股票代码、条数和 AbortSignal。出参按余弦相似度排列，原文来自 MySQL。
  * Qdrant 里有、MySQL 里已经没有的点丢掉，名次在剩下的结果里重新排。
  */
@@ -139,6 +154,7 @@ const vectorRecall = async ({ query, ownerId, stockCode, limit, signal }) => {
 };
 
 /**
+ * 关键字检索（mysql）
  * 入参是问题、用户、股票代码和条数。出参是全文命中，以及实际送进全文索引的文本。
  * 过滤用的股票代码先从问题里拿掉；拿掉后组不出词，就不再查全文。
  */
@@ -164,6 +180,7 @@ const keywordRecall = async ({ query, ownerId, stockCode, limit }) => {
 };
 
 /**
+ * 混合检索 RRF
  * 入参是两路各自按名次排好的命中。出参按融合分从高到低，还没按 topK 截断。
  * 融合分 = 1/(60+向量名次) + 1/(60+关键词名次)。某一路没有这条，那一路不加分。
  * 只累加名次。余弦分和全文分不在一个量纲上。分数相同时按 chunk id 排，同一条问题重复检索名次不变。
@@ -207,18 +224,86 @@ const fuseByRank = (vectorHits, keywordHits) => {
     );
 };
 
+const hybridHitsOf = (fused) =>
+  fused.map(({ item, score }, index) =>
+    chunkHit(item.row, {
+      rank: index + 1,
+      score,
+      vectorRank: item.vectorRank,
+      vectorScore: item.vectorScore,
+      keywordRank: item.keywordRank,
+      keywordScore: item.keywordScore,
+      rrfRank: index + 1,
+      rrfScore: score,
+    })
+  );
+
 /**
- * 入参是问题、当前用户、topK、mode（vector / keyword / hybrid）、可选的股票代码和 AbortSignal。
+ * 重排
+ * 入参是已经召回的候选、问题、topK、阈值和 AbortSignal。
+ * 出参的 ranked 按重排分排列，低于阈值的标 dropped，实验台仍显示这些行。
+ * hits 是去掉 dropped 之后的前 topK 条。
+ * 阈值只和重排分比较。余弦分、全文分、融合分不在这个量纲上。
+ */
+const rerankHits = async ({ query, hits, topK, minScore, signal }) => {
+  if (!hits.length) return { hits: [], ranked: [] };
+  throwIfAborted(signal);
+  const scored = await rerankPassages(
+    query,
+    hits.map((hit) => hit.content),
+    { signal }
+  );
+  const scoreByIndex = new Map(scored.map((item) => [item.index, item.score]));
+  const ordered = hits
+    .map((hit, index) => ({
+      hit,
+      score: scoreByIndex.has(index) ? scoreByIndex.get(index) : null,
+    }))
+    .sort((left, right) => {
+      if (left.score == null && right.score == null)
+        return left.hit.id - right.hit.id;
+      if (left.score == null) return 1;
+      if (right.score == null) return -1;
+      return right.score - left.score || left.hit.id - right.hit.id;
+    });
+  const ranked = ordered.map((item, index) => {
+    const dropped =
+      minScore != null && (item.score == null || item.score < minScore);
+    return chunkHit(item.hit, {
+      rank: index + 1,
+      score: item.score == null ? 0 : item.score,
+      vectorRank: item.hit.vectorRank,
+      vectorScore: item.hit.vectorScore,
+      keywordRank: item.hit.keywordRank,
+      keywordScore: item.hit.keywordScore,
+      rrfRank: item.hit.rrfRank,
+      rrfScore: item.hit.rrfScore,
+      rerankRank: index + 1,
+      rerankScore: item.score,
+      dropped,
+    });
+  });
+  return {
+    ranked,
+    hits: ranked.filter((hit) => !hit.dropped).slice(0, topK),
+  };
+};
+
+/**
+ * 入参是问题、当前用户、topK、mode（vector / keyword / hybrid）、是否重排、阈值、可选的股票代码和 AbortSignal。
  * 显式传入的六位代码优先于从问题里识别出来的代码。出参是按该模式排好的片段，原文来自 MySQL。
  * 1. 解析过滤用的股票代码。向量按 payload 过滤，关键词按 doc_id 过滤。
- * 2. vector、keyword 各按自己的分取 topK。
- * 3. hybrid 两路各先取 20 条，RRF 按名次合并，再截成 topK。
+ * 2. vector、keyword 各按自己的分取 topK。hybrid 两路各先取 20 条，RRF 合并后再截成 topK。
+ * 3. 打开重排时，召回放宽到 20 条。hybrid 取融合后的前 20 条，和问题一起重排，再取 topK。
+ * 4. 重排分低于阈值的标 dropped，不放进 hits。ranked 仍保留这些行，实验台用来置灰。
  */
 const retrieve = async ({
   query,
   userId,
   topK,
   mode = "vector",
+  rerank = false,
+  minScore,
   stockCode,
   signal,
 } = {}) => {
@@ -231,7 +316,10 @@ const retrieve = async ({
 
   const limit = topKOf(topK);
   const code = filterStockCode(query, stockCode);
-  const recallLimit = mode === "hybrid" ? RECALL_LIMIT : limit;
+  const threshold = minScoreOf(minScore);
+  const rerankOn = Boolean(rerank);
+  // 重排要看到名次靠后的正确段，所以召回先取 20 条，而不是直接取 topK。
+  const recallLimit = mode === "hybrid" || rerankOn ? RECALL_LIMIT : limit;
 
   let vectorHits = [];
   let keywordHits = [];
@@ -258,23 +346,33 @@ const retrieve = async ({
     keywordQuery = keyword.text;
   }
 
-  if (mode === "hybrid") {
-    const fused = fuseByRank(vectorHits, keywordHits).slice(0, limit);
+  const pool =
+    mode === "hybrid"
+      ? hybridHitsOf(fuseByRank(vectorHits, keywordHits)).slice(
+          0,
+          rerankOn ? RECALL_LIMIT : limit
+        )
+      : mode === "vector"
+        ? vectorHits
+        : keywordHits;
+
+  if (rerankOn) {
+    const reranked = await rerankHits({
+      query,
+      hits: pool,
+      topK: limit,
+      minScore: threshold,
+      signal,
+    });
     return {
       mode,
       topK: limit,
       stockCode: code,
       keywordQuery,
-      hits: fused.map(({ item, score }, index) =>
-        chunkHit(item.row, {
-          rank: index + 1,
-          score,
-          vectorRank: item.vectorRank,
-          vectorScore: item.vectorScore,
-          keywordRank: item.keywordRank,
-          keywordScore: item.keywordScore,
-        })
-      ),
+      rerank: true,
+      minScore: threshold,
+      hits: reranked.hits,
+      ranked: reranked.ranked,
     };
   }
 
@@ -283,7 +381,10 @@ const retrieve = async ({
     topK: limit,
     stockCode: code,
     keywordQuery,
-    hits: mode === "vector" ? vectorHits : keywordHits,
+    rerank: false,
+    minScore: null,
+    hits: pool,
+    ranked: null,
   };
 };
 

@@ -237,6 +237,14 @@ router.post("/search", authMiddleware, async (req, res) => {
   if (stockCode && !/^\d{6}$/.test(stockCode)) {
     return res.status(400).json(new ErrorModel("股票代码需要是 6 位数字"));
   }
+  const rerank = req.body.rerank === true;
+  let minScore = null;
+  if (req.body.minScore != null && req.body.minScore !== "") {
+    minScore = Number(req.body.minScore);
+    if (!Number.isFinite(minScore)) {
+      return res.status(400).json(new ErrorModel("阈值需要是数字"));
+    }
+  }
 
   const controller = new AbortController();
   const onClose = () => {
@@ -249,6 +257,8 @@ router.post("/search", authMiddleware, async (req, res) => {
       userId: req.userId,
       topK: req.body.topK,
       mode,
+      rerank,
+      minScore,
       stockCode,
       signal: controller.signal,
     });
