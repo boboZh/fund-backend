@@ -5,6 +5,7 @@ const {
   client,
   tools,
   actions,
+  mergeResearchSources,
 } = require("../services/ai");
 const {
   sliceMessages,
@@ -164,6 +165,8 @@ router.post("/chat", authMiddleware, async (req, res) => {
   try {
     let isToolCall = false;
     let isFirstChat = true;
+    // 模型可能先检索再追问，同一轮里分多次调用。来源要跨这些调用累加，ref 才能连续。
+    let sources = [];
 
     while (isFirstChat || isToolCall) {
       const toolCallMap = {}; // 每轮对话结束后，清空toolCallMap
@@ -250,6 +253,15 @@ router.post("/chat", authMiddleware, async (req, res) => {
           const dataList = await Promise.all(
             _toolCalls.map((item, index) => runTask(item, index))
           );
+          const merged = mergeResearchSources(
+            sources,
+            _toolCalls.map((toolCall, index) => ({
+              name: toolCall.functionName,
+              content: dataList[index],
+            }))
+          );
+          sources = merged.sources;
+          const toolContents = merged.contents;
 
           const assistantToolCalls = _toolCalls.map((toolCall) => {
             const { id, functionName, json, tc } = toolCall;
@@ -281,7 +293,7 @@ router.post("/chat", authMiddleware, async (req, res) => {
             messages.push({
               role: "tool",
               tool_call_id: id,
-              content: dataList[index],
+              content: toolContents[index],
             });
 
             // await saveToolCallResultMessage(
@@ -292,7 +304,7 @@ router.post("/chat", authMiddleware, async (req, res) => {
             // );
             brainMemoryBuffer.push({
               fn: saveToolCallResultMessage,
-              args: [sessionId, userId, dataList[index], id],
+              args: [sessionId, userId, toolContents[index], id],
             });
           }
         });

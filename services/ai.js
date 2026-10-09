@@ -107,7 +107,8 @@ const tools = [
 
 /**
  * 入参是模型生成的 query、可选股票代码和起始日期，以及当前用户。
- * 出参是 JSON 字符串。命中片段按 ref 从 1 编号；一条都没有时是空数组。
+ * 出参是 JSON 字符串。单次调用里 ref 从 1 编号，并带上 chunk id。一条都没有时是空数组。
+ * 一轮里可能多次调用。路由按 id 合并后改成连续的全局 ref，id 只用于去重，不留给模型。
  * 固定走混合检索、重排、topK 5 和评测定出的阈值。用户停止生成时，沿用这一轮请求的 AbortSignal。
  */
 const searchResearchReports = async (args, userId) => {
@@ -125,6 +126,7 @@ const searchResearchReports = async (args, userId) => {
     signal: signalContext.getStore(),
   });
   const passages = result.hits.map((hit, index) => ({
+    id: hit.id,
     ref: index + 1,
     title: hit.title,
     org: hit.org,
@@ -134,6 +136,63 @@ const searchResearchReports = async (args, userId) => {
     content: hit.content,
   }));
   return JSON.stringify(passages);
+};
+
+const sourceOf = (passage, ref) => ({
+  id: Number(passage.id),
+  ref,
+  title: passage.title,
+  org: passage.org,
+  reportDate: passage.reportDate,
+  page: passage.page,
+  heading: passage.heading,
+  content: passage.content,
+});
+
+const passageForModel = (source) => ({
+  ref: source.ref,
+  title: source.title,
+  org: source.org,
+  reportDate: source.reportDate,
+  page: source.page,
+  heading: source.heading,
+  content: source.content,
+});
+
+/**
+ * 入参是本轮已经收集的来源，以及这一批工具名和对应的 JSON 字符串。
+ * 出参是合并后的来源，以及写回模型的工具结果。
+ * 只处理 search_research_reports。同一 chunk id 只保留第一次出现的片段，ref 按出现顺序连续编号。
+ * 后面再次命中同一块时，沿用已有 ref，避免两次调用都从 [1] 计。其它工具的结果原样返回。
+ */
+const mergeResearchSources = (sources, calls) => {
+  const next = sources.slice();
+  const byId = new Map(
+    next
+      .filter((item) => Number.isInteger(item.id) && item.id > 0)
+      .map((item) => [item.id, item])
+  );
+  const contents = calls.map((call) => {
+    if (call.name !== "search_research_reports") return call.content;
+    let passages;
+    try {
+      passages = JSON.parse(call.content);
+    } catch {
+      return call.content;
+    }
+    if (!Array.isArray(passages)) return call.content;
+    const rewritten = passages.map((passage) => {
+      const id = Number(passage.id);
+      const known = Number.isInteger(id) && id > 0 ? byId.get(id) : null;
+      if (known) return passageForModel(known);
+      const source = sourceOf(passage, next.length + 1);
+      if (Number.isInteger(id) && id > 0) byId.set(id, source);
+      next.push(source);
+      return passageForModel(source);
+    });
+    return JSON.stringify(rewritten);
+  });
+  return { sources: next, contents };
 };
 
 const actions = {
@@ -286,4 +345,5 @@ module.exports = {
   client,
   tools,
   actions,
+  mergeResearchSources,
 };

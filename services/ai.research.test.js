@@ -19,7 +19,7 @@ const retrieveModule = require("./rag/retrieve");
 const mockRetrieve = jest.fn();
 retrieveModule.retrieve = mockRetrieve;
 
-const { actions, tools } = require("./ai");
+const { actions, tools, mergeResearchSources } = require("./ai");
 const { signalContext } = require("../utils/context");
 
 const tool = tools.find((item) => item.function.name === "search_research_reports");
@@ -43,6 +43,7 @@ describe("search_research_reports", () => {
     mockRetrieve.mockResolvedValue({
       hits: [
         {
+          id: 9,
           title: "广汇能源深度报告",
           org: "开源证券",
           reportDate: "2026-10-05",
@@ -74,6 +75,7 @@ describe("search_research_reports", () => {
     });
     expect(JSON.parse(raw)).toEqual([
       {
+        id: 9,
         ref: 1,
         title: "广汇能源深度报告",
         org: "开源证券",
@@ -93,5 +95,79 @@ describe("search_research_reports", () => {
 
     expect(JSON.parse(raw)).toEqual([]);
     expect(action.msgModel(raw)).toBe("研报库里没有找到相关内容");
+  });
+});
+
+describe("mergeResearchSources", () => {
+  const passage = (id, ref, content) =>
+    JSON.stringify([
+      {
+        id,
+        ref,
+        title: "标题",
+        org: "开源证券",
+        reportDate: "2026-10-05",
+        page: 7,
+        heading: "盈利预测",
+        content,
+      },
+    ]);
+
+  test("同一 chunk 只保留第一次，两次调用的 ref 连续且不重号", () => {
+    const first = mergeResearchSources(
+      [],
+      [
+        { name: "search_research_reports", content: passage(9, 1, "甲") },
+        { name: "search_research_reports", content: passage(9, 1, "甲重复") },
+        { name: "get_user_portfolio", content: "{\"data\":[]}" },
+      ]
+    );
+    const second = mergeResearchSources(first.sources, [
+      {
+        name: "search_research_reports",
+        content: JSON.stringify([
+          {
+            id: 9,
+            ref: 1,
+            title: "标题",
+            org: "开源证券",
+            reportDate: "2026-10-05",
+            page: 7,
+            heading: "盈利预测",
+            content: "甲又来了",
+          },
+          {
+            id: 4,
+            ref: 2,
+            title: "另一份",
+            org: "中信",
+            reportDate: "2026-09-01",
+            page: 3,
+            heading: "产能",
+            content: "乙",
+          },
+        ]),
+      },
+    ]);
+
+    expect(second.sources.map((item) => [item.id, item.ref, item.content])).toEqual([
+      [9, 1, "甲"],
+      [4, 2, "乙"],
+    ]);
+    expect(JSON.parse(first.contents[0])).toEqual([
+      {
+        ref: 1,
+        title: "标题",
+        org: "开源证券",
+        reportDate: "2026-10-05",
+        page: 7,
+        heading: "盈利预测",
+        content: "甲",
+      },
+    ]);
+    expect(JSON.parse(first.contents[1])[0].ref).toBe(1);
+    expect(first.contents[1]).not.toContain('"id"');
+    expect(first.contents[2]).toBe("{\"data\":[]}");
+    expect(JSON.parse(second.contents[0]).map((item) => item.ref)).toEqual([1, 2]);
   });
 });
