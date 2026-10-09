@@ -1,8 +1,10 @@
-const { retrieve } = require("../services/rag/retrieve");
+const { retrieve, DEFAULT_MIN_SCORE } = require("../services/rag/retrieve");
+const store = require("../services/rag/store");
+const { client } = require("../services/ai");
 
-// 有答案的题算 recall。拒答题不进分母，用来看重排分能不能和有答案的题分开。
+// 有答案的题算 recall。拒答题不进分母，只看留下的条数是不是 0。
 // 用法: node scripts/rag-eval.js <user_id> [minScore]
-// 这套题上，minScore 取 [0.0134, 0.7419]：0.0134 起无答案题留 0 条，超过 0.7419 会丢掉最弱的正确段。
+// 不传 minScore 时，重排用 retrieve.js 的 DEFAULT_MIN_SCORE。没有重排的三路不用这个阈值。
 const ownerId = Number(process.argv[2]);
 const minScoreArg = process.argv[3];
 const LIMIT = 5;
@@ -108,11 +110,83 @@ const scoreText = (value) =>
     ? "无"
     : Number(value).toFixed(4);
 
-const runMode = async (mode, { rerank, minScore } = {}) => {
+/**
+ * 入参是原文在库里、在过滤范围内、在召回池、在最终 hits 里各是不是真。
+ * 出参是失败落在哪一步。库里没有整句时，解析丢掉和切块切断分不开。
+ * 进了最终 hits 时返回空字符串，那是检索命中，留给生成那一列。
+ */
+const missReason = ({ inCorpus, inFilter, inPool, inHits, poolIsWide }) => {
+  if (inHits) return "";
+  if (!inCorpus) return "库里没有整句原文，回到解析或切块";
+  if (!inFilter) return "过滤条件把含原文的文档排除了";
+  if (!inPool) return poolIsWide ? "召回没进前 20" : "没进这次召回的前 5";
+  return "重排或阈值把它排出了前 5";
+};
+
+const corpusOf = (bodies, fact, stockCode) => {
+  const matched = bodies.filter((row) => containsFact(row.content, fact));
+  return {
+    inCorpus: matched.length > 0,
+    inFilter: !stockCode || matched.some((row) => row.stockCode === stockCode),
+  };
+};
+
+// 评测要能复跑，温度设为 0。线上对话没有设温度。
+const answerFromHits = async (question, hits) => {
+  const passages = hits.map((hit, index) => ({
+    ref: index + 1,
+    title: hit.title,
+    page: hit.pageStart,
+    content: hit.content,
+  }));
+  const response = await client.chat.completions.create({
+    model: "deepseek-chat",
+    temperature: 0,
+    messages: [
+      {
+        role: "system",
+        content:
+          "只根据片段回答。片段里的数字和原词要原样写出。片段里没有的内容，说研报库里没找到。",
+      },
+      {
+        role: "user",
+        content: `问题：${question}\n\n片段：\n${JSON.stringify(passages)}`,
+      },
+    ],
+  });
+  return response.choices[0]?.message?.content || "";
+};
+
+const formatTable = (rows) => {
+  const header = [
+    "配置",
+    "recall@1",
+    "recall@3",
+    "recall@5",
+    "正确拒答",
+    "检索命中但回答没有",
+  ];
+  const lines = [
+    header,
+    ...rows.map((row) => [
+      row.label,
+      `${row.hitCounts[1]}/${row.total}`,
+      `${row.hitCounts[3]}/${row.total}`,
+      `${row.hitCounts[5]}/${row.total}`,
+      `${row.rejectEmpty}/${row.rejectTotal}`,
+      String(row.generationGaps),
+    ]),
+  ];
+  return lines.map((cols) => cols.join("\t")).join("\n");
+};
+
+const runMode = async (mode, { rerank, minScore, bodies } = {}) => {
   const hitCounts = Object.fromEntries(KS.map((k) => [k, 0]));
   const missed = [];
+  const generationMisses = [];
   const correctScores = [];
   const rejectRows = [];
+  const poolIsWide = mode === "hybrid" || Boolean(rerank);
 
   for (const item of questions) {
     const result = await retrieve({
@@ -134,6 +208,12 @@ const runMode = async (mode, { rerank, minScore } = {}) => {
       });
       continue;
     }
+    const inHits = result.hits.some((hit) =>
+      containsFact(hit.content, item.mustContain)
+    );
+    const inPool = pool.some((hit) =>
+      containsFact(hit.content, item.mustContain)
+    );
     const index = result.hits.findIndex((hit) =>
       containsFact(hit.content, item.mustContain)
     );
@@ -141,7 +221,19 @@ const runMode = async (mode, { rerank, minScore } = {}) => {
     KS.forEach((k) => {
       if (rank && rank <= k) hitCounts[k] += 1;
     });
-    if (!rank) missed.push(item.question);
+    if (!inHits) {
+      const corpus = corpusOf(bodies, item.mustContain, item.stockCode);
+      const reason = missReason({ ...corpus, inPool, inHits, poolIsWide });
+      missed.push({ question: item.question, reason });
+    } else {
+      const answer = await answerFromHits(item.question, result.hits);
+      if (!containsFact(answer, item.mustContain)) {
+        generationMisses.push(item.question);
+        console.log(
+          `- ${item.question}: 检索命中，回答里没有「${item.mustContain}」`
+        );
+      }
+    }
     if (rerank) {
       const match = pool.find((hit) =>
         containsFact(hit.content, item.mustContain)
@@ -161,7 +253,7 @@ const runMode = async (mode, { rerank, minScore } = {}) => {
     }
   }
 
-  return { hitCounts, missed, correctScores, rejectRows };
+  return { hitCounts, missed, generationMisses, correctScores, rejectRows };
 };
 
 const run = async () => {
@@ -169,7 +261,7 @@ const run = async () => {
     console.error("用法: node scripts/rag-eval.js <user_id> [minScore]");
     process.exit(1);
   }
-  let minScore = null;
+  let minScore = DEFAULT_MIN_SCORE;
   if (minScoreArg != null && minScoreArg !== "") {
     minScore = Number(minScoreArg);
     if (!Number.isFinite(minScore)) {
@@ -178,26 +270,29 @@ const run = async () => {
     }
   }
 
+  const bodies = await store.listChunkBodies(ownerId);
   const total = answerable.length;
-  const recallAt1 = {};
+  const summary = [];
 
   for (const spec of RUNS) {
     console.log(`\n${spec.label}`);
-    const { hitCounts, missed, correctScores, rejectRows } = await runMode(
-      spec.mode,
-      {
+    const { hitCounts, missed, generationMisses, correctScores, rejectRows } =
+      await runMode(spec.mode, {
         rerank: spec.rerank,
         minScore: spec.rerank ? minScore : null,
-      }
-    );
+        bodies,
+      });
     KS.forEach((k) => {
       const recall = (hitCounts[k] / total).toFixed(2);
       console.log(`recall@${k}: ${hitCounts[k]}/${total} = ${recall}`);
     });
-    recallAt1[spec.label] = hitCounts[1];
+    const rejectEmpty = rejectRows.filter((row) => row.kept === 0).length;
+    console.log(`正确拒答: ${rejectEmpty}/${rejections.length}`);
     if (missed.length) {
       console.log("前 5 名未命中:");
-      missed.forEach((question) => console.log(`- ${question}`));
+      missed.forEach((item) =>
+        console.log(`- ${item.question}: ${item.reason}`)
+      );
     }
     if (spec.rerank) {
       const present = correctScores.filter((score) => score != null);
@@ -217,15 +312,35 @@ const run = async () => {
           `- 拒答 ${row.question}: 最高分 ${scoreText(row.topScore)}，留下 ${row.kept} 条`
         );
       });
-      const emptyRejects = rejectRows.filter((row) => row.kept === 0).length;
-      console.log(`拒答结果为空: ${emptyRejects}/${rejections.length}`);
     }
+    summary.push({
+      label: spec.label,
+      hitCounts,
+      total,
+      rejectEmpty,
+      rejectTotal: rejections.length,
+      generationGaps: generationMisses.length,
+      missed,
+      generationMisses,
+    });
   }
 
-  console.log("\nrecall@1 对照:");
-  RUNS.forEach((spec) => {
-    console.log(`${spec.label}: ${recallAt1[spec.label]}/${total}`);
+  console.log(`\n对照（重排阈值 ${minScore}）`);
+  console.log(formatTable(summary));
+  summary.forEach((row) => {
+    if (!row.generationMisses.length) return;
+    console.log(`\n${row.label} 检索命中但回答没有:`);
+    row.generationMisses.forEach((question) => console.log(`- ${question}`));
   });
 };
 
-run().then(() => process.exit(0));
+if (require.main === module) {
+  run()
+    .then(() => process.exit(0))
+    .catch((err) => {
+      console.error(err);
+      process.exit(1);
+    });
+}
+
+module.exports = { missReason, corpusOf, formatTable, containsFact };

@@ -183,6 +183,16 @@ const searchChunksByKeyword = async (userId, { text, stockCode, dateFrom, limit 
   );
 };
 
+// 评测用来看正确原文还在不在库里。只取正文和股票代码，判断是解析丢了，还是过滤或召回没带上。
+const listChunkBodies = async (userId) =>
+  execStrict(
+    `SELECT c.id, c.content, d.stock_code
+     FROM research_chunks c
+     JOIN research_docs d ON d.id = c.doc_id
+     WHERE c.user_id = ?`,
+    [userId],
+  );
+
 const recoverStuckDocs = async () =>
   execStrict(
     `UPDATE research_docs SET status = 'failed', error_msg = '服务重启中断，请重试' WHERE status IN ('parsing', 'embedding')`,
@@ -199,6 +209,7 @@ module.exports = {
   listChunks,
   listChunksByIds,
   searchChunksByKeyword,
+  listChunkBodies,
   deleteDoc,
   recoverStuckDocs,
 };
