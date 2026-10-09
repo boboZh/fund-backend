@@ -66,7 +66,8 @@ const tools = [
     strict: true,
     function: {
       name: "get_user_portfolio",
-      description: "获取当前登录用户的所有基金持仓明细，包括基金代码和持仓金额",
+      description:
+        "获取当前登录用户的全部基金持仓，含基金名称、代码、金额和当日涨跌。用户问板块、行业或主题的操作建议时必须先调用，再用问题里的主题词模糊匹配 fundName。",
       parameters: {
         type: "object",
         properties: {}, // 无需参数，服务端从session/cookie拿userId
@@ -79,7 +80,7 @@ const tools = [
     function: {
       name: "search_research_reports",
       description:
-        "检索当前用户已入库的公司研报。用户询问公司、行业、产品、财务数字、评级、目标价、盈利预测或观点时必须先调用，没有股票代码也要调用。这些内容不要凭记忆回答。",
+        "检索当前用户已入库的公司研报。用户询问某家公司的财务数字、评级、目标价、盈利预测或研报观点时必须先调用，没有股票代码也要调用。这些内容不要凭记忆回答。板块或主题的操作建议不要调用本工具。",
       parameters: {
         type: "object",
         properties: {

@@ -12,7 +12,7 @@ const invalid = (val) => !val && val !== 0;
 async function getPortfolioReport(portfolio) {
   let totalAmount = 0; // 所有持仓金额
   let totalDailyProfit = 0; // 今日所有收益
-  const signal = signalContext.enabled ? signalContext.getStore() : {};
+  const signal = signalContext.getStore() || {};
 
   const list = [];
 
@@ -32,7 +32,7 @@ async function getPortfolioReport(portfolio) {
       });
       continue;
     }
-    if (signal.aborted) throw new Error("AbortError");
+    if (signal && signal.aborted) throw new Error("AbortError");
 
     const estimatePercent = parseFloat(realtimeData.estimatePercent);
     const dailyProfit = amount * (estimatePercent / 100);
@@ -76,8 +76,14 @@ async function getEstimate(fundCode) {
     };
   }
 
-  const signal = signalContext.enabled ? signalContext.getStore() : {};
-  if (signal.aborted) throw new Error("AbortError");
+  const throwIfAborted = (signal) => {
+    if (!signal || !signal.aborted) return;
+    const error = new Error("请求已取消");
+    error.name = "AbortError";
+    throw error;
+  };
+
+  throwIfAborted(signalContext.getStore() || {});
 
   const stockCodes = holdings.map((h) => h.stockCode);
   const stockQuotes = await crawler.getStocksRealtime(stockCodes);
