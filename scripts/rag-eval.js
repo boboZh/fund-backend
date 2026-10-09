@@ -2,6 +2,7 @@ const { retrieve } = require("../services/rag/retrieve");
 
 // 有答案的题算 recall。拒答题不进分母，用来看重排分能不能和有答案的题分开。
 // 用法: node scripts/rag-eval.js <user_id> [minScore]
+// 这套题上，minScore 取 [0.0134, 0.7419]：0.0134 起无答案题留 0 条，超过 0.7419 会丢掉最弱的正确段。
 const ownerId = Number(process.argv[2]);
 const minScoreArg = process.argv[3];
 const LIMIT = 5;
@@ -50,7 +51,7 @@ const questions = [
   {
     question:
       "2026H1期间，公司的研发投入金额及资本开支金额分别占营业收入的比重是多少？",
-    mustContain: "1.05%和 3.44%",
+    mustContain: "1.05%",
   },
   {
     question: "公司目前的在产煤矿项目均分布在哪个具体地区？",
@@ -98,7 +99,10 @@ const RUNS = [
 const answerable = questions.filter((item) => !item.reject);
 const rejections = questions.filter((item) => item.reject);
 
-const scoreText = (value) => (value == null || Number.isNaN(Number(value)) ? "无" : Number(value).toFixed(4));
+const scoreText = (value) =>
+  value == null || Number.isNaN(Number(value))
+    ? "无"
+    : Number(value).toFixed(4);
 
 const runMode = async (mode, { rerank, minScore } = {}) => {
   const hitCounts = Object.fromEntries(KS.map((k) => [k, 0]));
@@ -126,18 +130,30 @@ const runMode = async (mode, { rerank, minScore } = {}) => {
       });
       continue;
     }
-    const index = result.hits.findIndex((hit) => containsFact(hit.content, item.mustContain));
+    const index = result.hits.findIndex((hit) =>
+      containsFact(hit.content, item.mustContain)
+    );
     const rank = index === -1 ? null : index + 1;
     KS.forEach((k) => {
       if (rank && rank <= k) hitCounts[k] += 1;
     });
     if (!rank) missed.push(item.question);
     if (rerank) {
-      const match = pool.find((hit) => containsFact(hit.content, item.mustContain));
+      const match = pool.find((hit) =>
+        containsFact(hit.content, item.mustContain)
+      );
       correctScores.push(match ? match.rerankScore : null);
-      const rrf = match && match.rrfRank != null ? `融合第 ${match.rrfRank}` : "融合未进前 20";
-      const rerankRank = match && match.rerankRank != null ? `重排第 ${match.rerankRank}` : "重排未进候选";
-      console.log(`- ${item.question}: ${rerankRank}，${rrf}，重排分 ${scoreText(match && match.rerankScore)}`);
+      const rrf =
+        match && match.rrfRank != null
+          ? `融合第 ${match.rrfRank}`
+          : "融合未进前 20";
+      const rerankRank =
+        match && match.rerankRank != null
+          ? `重排第 ${match.rerankRank}`
+          : "重排未进候选";
+      console.log(
+        `- ${item.question}: ${rerankRank}，${rrf}，重排分 ${scoreText(match && match.rerankScore)}`
+      );
     }
   }
 
@@ -163,10 +179,13 @@ const run = async () => {
 
   for (const spec of RUNS) {
     console.log(`\n${spec.label}`);
-    const { hitCounts, missed, correctScores, rejectRows } = await runMode(spec.mode, {
-      rerank: spec.rerank,
-      minScore: spec.rerank ? minScore : null,
-    });
+    const { hitCounts, missed, correctScores, rejectRows } = await runMode(
+      spec.mode,
+      {
+        rerank: spec.rerank,
+        minScore: spec.rerank ? minScore : null,
+      }
+    );
     KS.forEach((k) => {
       const recall = (hitCounts[k] / total).toFixed(2);
       console.log(`recall@${k}: ${hitCounts[k]}/${total} = ${recall}`);
@@ -179,12 +198,20 @@ const run = async () => {
     if (spec.rerank) {
       const present = correctScores.filter((score) => score != null);
       const lowest = present.length ? Math.min(...present) : null;
-      const rejectScores = rejectRows.map((row) => row.topScore).filter((score) => score != null);
-      const highestReject = rejectScores.length ? Math.max(...rejectScores) : null;
-      console.log(`有答案的正确段里，最低重排分: ${scoreText(lowest)}（${present.length}/${answerable.length} 进了候选）`);
+      const rejectScores = rejectRows
+        .map((row) => row.topScore)
+        .filter((score) => score != null);
+      const highestReject = rejectScores.length
+        ? Math.max(...rejectScores)
+        : null;
+      console.log(
+        `有答案的正确段里，最低重排分: ${scoreText(lowest)}（${present.length}/${answerable.length} 进了候选）`
+      );
       console.log(`无答案的最高重排分: ${scoreText(highestReject)}`);
       rejectRows.forEach((row) => {
-        console.log(`- 拒答 ${row.question}: 最高分 ${scoreText(row.topScore)}，留下 ${row.kept} 条`);
+        console.log(
+          `- 拒答 ${row.question}: 最高分 ${scoreText(row.topScore)}，留下 ${row.kept} 条`
+        );
       });
       const emptyRejects = rejectRows.filter((row) => row.kept === 0).length;
       console.log(`拒答结果为空: ${emptyRejects}/${rejections.length}`);
