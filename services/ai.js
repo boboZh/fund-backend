@@ -289,7 +289,8 @@ const actions = {
     description: "正在检索公司研报",
     msgModel: (res) => {
       const rows = JSON.parse(res);
-      if (!Array.isArray(rows) || rows.length === 0) return "研报库里没有找到相关内容";
+      if (!Array.isArray(rows) || rows.length === 0)
+        return "研报库里没有找到相关内容";
       return `找到${rows.length}条相关研报片段`;
     },
   },
