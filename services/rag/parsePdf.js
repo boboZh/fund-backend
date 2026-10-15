@@ -17,7 +17,7 @@ const loadPdfjs = () => {
   }
   return pdfjsPromise;
 };
-
+// 把一份 PDF 的二进制内容拆成「每一页上的文字碎片」，顺便记下每个碎片在页面上的坐标
 const extractPdfPages = async (buffer) => {
   const pdfjs = await loadPdfjs();
   const doc = await pdfjs.getDocument({

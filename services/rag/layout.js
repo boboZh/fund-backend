@@ -1,5 +1,4 @@
-const DISCLAIMER_RE =
-  /免责声明|免责条款|法律声明|重要声明|信息披露|特别声明/;
+const DISCLAIMER_RE = /免责声明|免责条款|法律声明|重要声明|信息披露|特别声明/;
 const PAGE_NO_RE = /^(?:第\s*)?\d{1,3}(?:\s*页)?$/;
 
 // 页脚上的「3」「第 2 页」才是页码。左栏里的总市值 203 也是三位数字，但不能按页码丢掉。
@@ -93,7 +92,11 @@ const findGutter = (rows, pageWidth, fontSize) => {
   const best = clusters[0];
   const second = clusters[1];
   if (best.votes.length < 2 || best.width < minGap) return null;
-  if (second && best.votes.length < second.votes.length * 1.5 && best.width < second.width * 1.4) {
+  if (
+    second &&
+    best.votes.length < second.votes.length * 1.5 &&
+    best.width < second.width * 1.4
+  ) {
     return null;
   }
   return best.x;
@@ -110,14 +113,18 @@ const joinPieces = (pieces, y) => {
       gaps.push(gap);
       const font = Math.max(prev.height, piece.height, 8);
       if (gap > font * 0.45) {
-        const numeric = /[\d%]|[AEae]$/.test(prev.text) || /^[\d(（]/.test(piece.text.trim());
+        const numeric =
+          /[\d%]|[AEae]$/.test(prev.text) || /^[\d(（]/.test(piece.text.trim());
         text += numeric ? " | " : " ";
       }
     }
     text += piece.text;
   });
   return {
-    text: text.replace(/[ \t]+/g, " ").replace(/\s*\|\s*/g, " | ").trim(),
+    text: text
+      .replace(/[ \t]+/g, " ")
+      .replace(/\s*\|\s*/g, " | ")
+      .trim(),
     x: ordered[0].x,
     right: ordered[ordered.length - 1].x + ordered[ordered.length - 1].width,
     y,
@@ -127,6 +134,7 @@ const joinPieces = (pieces, y) => {
   };
 };
 
+// 把带坐标的碎片拼成一行行文字。
 // 先按栏读完再读下一栏。同一行高上的左栏数字不能插进右栏句子里。
 const orderReadingLines = (items, pageWidth) => {
   const normalized = normalizeItems(items);
@@ -142,7 +150,8 @@ const orderReadingLines = (items, pageWidth) => {
   const flushColumns = () => {
     if (!leftBuf.length && !rightBuf.length) return;
     const medianWidth = median(leftBuf.map((line) => line.right - line.x));
-    const asSummary = Boolean(pageWidth) && medianWidth > 0 && medianWidth < pageWidth * 0.36;
+    const asSummary =
+      Boolean(pageWidth) && medianWidth > 0 && medianWidth < pageWidth * 0.36;
     leftBuf.forEach((line) => {
       lines.push({ ...line, role: asSummary ? "side" : "body" });
     });
@@ -159,7 +168,9 @@ const orderReadingLines = (items, pageWidth) => {
       return;
     }
     const left = sorted.filter((piece) => piece.x + piece.width / 2 < gutterX);
-    const right = sorted.filter((piece) => piece.x + piece.width / 2 >= gutterX);
+    const right = sorted.filter(
+      (piece) => piece.x + piece.width / 2 >= gutterX
+    );
     const splits =
       maxGap >= minGap &&
       gapAt != null &&
@@ -170,7 +181,7 @@ const orderReadingLines = (items, pageWidth) => {
       leftBuf.length || rightBuf.length
         ? Math.min(
             leftBuf.length ? leftBuf[leftBuf.length - 1].y : Infinity,
-            rightBuf.length ? rightBuf[rightBuf.length - 1].y : Infinity,
+            rightBuf.length ? rightBuf[rightBuf.length - 1].y : Infinity
           )
         : null;
     // 栏内换行间距不大。拉开一大截之后出现的单侧文字，是下一节正文，不再并进上一栏。
@@ -214,7 +225,9 @@ const isTableLine = (line) => {
   if (text.includes("|") && numbers.length >= 2) return true;
   if (numbers.length >= 3) return true;
   if (TABLE_LABEL_RE.test(text) && numbers.length >= 1) return true;
-  const wideGaps = (line.gaps || []).filter((gap) => gap > (line.fontSize || 10));
+  const wideGaps = (line.gaps || []).filter(
+    (gap) => gap > (line.fontSize || 10)
+  );
   return wideGaps.length >= 2 && numbers.length >= 2;
 };
 // 去掉每页上重复出现的页眉、页脚和页码，避免这些套话在后面的切块和检索里占位置。
@@ -265,7 +278,12 @@ const linesToParagraphs = (lines, page) => {
   const columnWidth = Math.max(...lines.map((line) => line.right - line.x), 1);
   const tableFlags = lines.map((line) => isTableLine(line));
   for (let index = 1; index < tableFlags.length - 1; index += 1) {
-    if (!tableFlags[index] && tableFlags[index - 1] && tableFlags[index + 1] && lines[index].text.length <= 24) {
+    if (
+      !tableFlags[index] &&
+      tableFlags[index - 1] &&
+      tableFlags[index + 1] &&
+      lines[index].text.length <= 24
+    ) {
       tableFlags[index] = true;
     }
   }
@@ -337,6 +355,7 @@ const isHeadingParagraph = (paragraph, bodySize) =>
   !/[。！？]$/.test(paragraph.text) &&
   paragraph.fontSize >= bodySize * 1.15;
 
+// 给这些段落标上小节标题，并丢掉免责声明。
 const attachHeadings = (paragraphs) => {
   const bodySize =
     median(
@@ -399,6 +418,7 @@ const attachHeadings = (paragraphs) => {
 };
 
 const buildDocument = (pages) => {
+  // 把带坐标的碎片拼成一行行文字。
   const pageLines = pages.map((page) =>
     orderReadingLines(page.items, page.width).map((line) => ({
       ...line,
@@ -413,10 +433,12 @@ const buildDocument = (pages) => {
     .slice(0, 80)
     .map((line) => ({ text: line.text, fontSize: line.fontSize }));
 
+  // 去掉每页上重复出现的页眉、页脚和页码
   const { cleaned, dropped: chromeDropped } = stripChrome(pageLines);
   const paragraphs = [];
   const sectionDropped = [];
 
+  // 正文收成段落
   cleaned.forEach((lines, index) => {
     const pageNumber = index + 1;
     const side = lines.filter((line) => line.role === "side");

@@ -34,6 +34,7 @@ const idOf = (value) => {
   return NaN;
 };
 
+// 规范化模型返回的数据格式
 const normalizeLines = (block) => {
   const source = Array.isArray(block?.lines)
     ? block.lines

@@ -77,7 +77,9 @@ const readMeta = (body) => {
     overlapParagraphs: Number(body.overlapParagraphs) === 0 ? 0 : 1,
   };
 };
-
+/**
+ *
+ */
 router.post("/preview", authMiddleware, pdfUpload, async (req, res) => {
   try {
     if (!req.file) return res.status(400).json(new ErrorModel("请上传 PDF"));
@@ -150,7 +152,7 @@ router.post("/docs", authMiddleware, async (req, res) => {
       filePath: `public/uploads/research/${fileHash}.pdf`,
       ...meta,
     });
-    // 异步解析文档并切块
+    // 先返回 parsing。后台整理版面，再把段落交给 Python /ingest 切块和写向量。
     ingestDoc(id);
     const doc = await store.getDoc(id, req.userId);
     res.json(new SuccessModel({ doc, duplicate: false }));
@@ -177,6 +179,7 @@ router.get("/docs", authMiddleware, async (req, res) => {
   }
 });
 
+// 根据文档id获取切块和丢弃行
 router.get("/docs/:id/chunks", authMiddleware, async (req, res) => {
   try {
     const doc = await store.getDoc(req.params.id, req.userId);
@@ -197,6 +200,7 @@ router.post("/docs/:id/rechunk", authMiddleware, async (req, res) => {
     const meta = readMeta({ ...doc, ...req.body, reportDate: doc.reportDate });
     if (typeof meta === "string")
       return res.status(400).json(new ErrorModel(meta));
+    // 更新文档状态为解析中，更新文档切块配置
     await store.updateDoc(doc.id, {
       max_chars: meta.maxChars,
       overlap_paragraphs: meta.overlapParagraphs,
@@ -228,12 +232,19 @@ router.post("/docs/:id/retry", authMiddleware, async (req, res) => {
 router.post("/search", authMiddleware, async (req, res) => {
   const query = String(req.body.query || "").trim();
   if (!query) return res.status(400).json(new ErrorModel("请输入问题"));
-  if (query.length > 2000) return res.status(400).json(new ErrorModel("问题太长"));
-  const mode = req.body.mode == null || req.body.mode === "" ? "vector" : String(req.body.mode);
+  if (query.length > 2000)
+    return res.status(400).json(new ErrorModel("问题太长"));
+  const mode =
+    req.body.mode == null || req.body.mode === ""
+      ? "vector"
+      : String(req.body.mode);
   if (!["vector", "keyword", "hybrid"].includes(mode)) {
-    return res.status(400).json(new ErrorModel("检索模式只能是向量、关键词或混合"));
+    return res
+      .status(400)
+      .json(new ErrorModel("检索模式只能是向量、关键词或混合"));
   }
-  const stockCode = req.body.stockCode == null ? "" : String(req.body.stockCode).trim();
+  const stockCode =
+    req.body.stockCode == null ? "" : String(req.body.stockCode).trim();
   if (stockCode && !/^\d{6}$/.test(stockCode)) {
     return res.status(400).json(new ErrorModel("股票代码需要是 6 位数字"));
   }

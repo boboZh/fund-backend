@@ -165,7 +165,7 @@ const vectorRecall = async ({
     query: vector,
     limit,
     filter: { must },
-    with_payload: false,
+    with_payload: false, //with_payload: false 表示返回的每条结果只留 point id 和余弦分，不附带filter里 stock_name、title、heading 这些字段
   });
 
   const points = Array.isArray(result && result.points) ? result.points : [];

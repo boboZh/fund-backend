@@ -1,11 +1,9 @@
 const fse = require("fs-extra");
 const { extractPdfPages } = require("./parsePdf");
-const { splitParagraphs } = require("./chunk");
 const { orderDocument, LAYOUT_VERSION, dropToc } = require("./readingOrder");
 const { pdfPathOf, droppedPathOf, layoutPathOf } = require("./paths");
 const store = require("./store");
-const { embedChunks } = require("./embed");
-const { deleteByDoc, upsertChunks } = require("./qdrant");
+const { postIngest } = require("./pythonIngest");
 
 const running = new Set();
 const MIN_CHARS_PER_PAGE = 30;
@@ -74,7 +72,9 @@ const layoutDoc = async (doc, buffer) => {
   const cached = await readLayout(doc.fileHash);
   if (cached) return cached;
 
+  //把一份 PDF 的二进制内容拆成「每一页上的文字碎片」，顺便记下每个碎片在页面上的坐标
   const pages = await extractPdfPages(buffer);
+  // 计算正文文字数量
   const charsPerPage = pages.length ? sourceCharCount(pages) / pages.length : 0;
   if (charsPerPage < MIN_CHARS_PER_PAGE) {
     throw new Error("这份 PDF 几乎没有可复制的文字，可能是扫描件");
@@ -91,7 +91,10 @@ const layoutDoc = async (doc, buffer) => {
   await writeLayout(doc.fileHash, laid);
   return laid;
 };
-
+/**
+ * 入参是已经插入的研报 id。版面仍在这里整理，切块和向量交给 Python 的 POST /ingest。
+ * 路由不 await 这个函数：整理版面和向量化都会超过前端的 30 秒超时，浏览器先拿到 parsing。
+ */
 const ingestDoc = async (docId) => {
   if (running.has(docId)) return;
   running.add(docId);
@@ -108,39 +111,22 @@ const ingestDoc = async (docId) => {
 
     const parsed = await layoutDoc(doc, await fse.readFile(filePath));
     const withoutToc = dropToc(parsed.paragraphs);
-    const chunks = splitParagraphs(withoutToc.paragraphs, {
-      maxChars: doc.maxChars,
-      overlapParagraphs: doc.overlapParagraphs,
-    });
-    if (!chunks.length) {
-      await fail(docId, "没有切出可用段落");
-      return;
-    }
-
-    // 重切会插入新的自增 id。先按 doc_id 删掉旧 point，再换 MySQL 里的块，否则旧向量还指着已经删掉的 id。
-    await deleteByDoc(doc.id, doc.userId);
-    await store.replaceChunks(docId, doc.userId, chunks);
     await fse.writeJson(
       droppedPathOf(doc.fileHash),
       [...(parsed.dropped || []), ...withoutToc.dropped].slice(0, 50)
     );
-    await store.updateDoc(docId, {
-      status: "embedding",
-      error_msg: null,
-      page_count: parsed.pageCount,
-    });
-
-    const stored = await store.listChunks(docId, doc.userId);
-    if (stored.length !== chunks.length) {
-      throw new Error("写入的切块数量和读回的不一致");
+    if (!withoutToc.paragraphs.length) {
+      await fail(docId, "没有切出可用段落");
+      return;
     }
-    const vectors = await embedChunks(stored, { stockName: doc.stockName });
-    await upsertChunks(doc, stored, vectors);
-    await store.updateDoc(docId, {
-      status: "embedded",
-      error_msg: null,
-      embed_model: process.env.EMBED_MODEL || "BAAI/bge-m3",
-    });
+
+    const result = await postIngest(doc, parsed.pageCount, withoutToc.paragraphs);
+    if (result?.doc?.status === "failed") {
+      console.error(
+        `Python 入库未完成 doc=${docId}:`,
+        result.doc.errorMsg || result.doc.error_msg || ""
+      );
+    }
   } catch (err) {
     console.error(`研报入库失败 doc=${docId}:`, err);
     await fail(docId, err.message || "解析失败").catch((updateErr) => {
