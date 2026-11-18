@@ -81,7 +81,7 @@ const tools = [
     function: {
       name: "search_research_reports",
       description:
-        "检索当前用户已入库的公司研报。用户询问某家公司的财务数字、评级、目标价、盈利预测或研报观点时必须先调用，没有股票代码也要调用。这些内容不要凭记忆回答。没有相关片段或信息不足时继续调用 search_web；不能用不相关公司的片段作答。最新行情、股价走势可直接联网。板块或主题的操作建议不要调用本工具。",
+        "检索当前用户已入库的公司研报。用户询问某家公司的财务数字、评级、目标价、盈利预测或研报观点时必须先调用，没有股票代码也要调用。这些内容不要凭记忆回答。没有相关片段或信息不足时继续调用 search_web；不能用不相关公司的片段作答。只有直接支持答案中具体事实或观点的相关片段才能标注 ref；说明片段无关、已排除或不能作为依据时禁止附上其引用编号，全部不可用时不得输出任何研报引用编号。最新行情、股价走势可直接联网。板块或主题的操作建议不要调用本工具。",
       parameters: {
         type: "object",
         properties: {
@@ -92,8 +92,9 @@ const tools = [
           },
           stockCode: {
             type: "string",
+            pattern: "^[0-9]{6}$",
             description:
-              "可选。六位股票代码。能确定公司时传入；没有公司或代码时省略此字段，检索会覆盖当前用户的全部研报。不要因为缺少代码而拒绝调用。",
+              "可选，仅接受六位数字股票代码。只有能明确确定该公司对应的六位数字代码时才传入；不确定代码，或公司使用美股字母代码、港股五位代码时，省略此字段，仅在 query 中保留公司名称。不得猜测代码、补零或将其他市场代码转换成六位数字。例如：广汇能源传入 stockCode: 600256（字符串）；英伟达省略 stockCode，query 保留“英伟达”。没有符合要求的代码时仍然调用本工具，不得因缺少代码而拒绝检索。",
           },
           dateFrom: {
             type: "string",
@@ -116,12 +117,14 @@ const tools = [
         properties: {
           query: {
             type: "string",
-            description: "补全公司名及指代的独立搜索问题，美股可加英文名或股票代码。",
+            description:
+              "补全公司名及指代的独立搜索问题，美股可加英文名或股票代码。",
           },
           timeRange: {
             type: "string",
             enum: ["day", "week", "month", "year"],
-            description: "可选，限制时间范围。最新消息或近期走势优先用 week 或 month。",
+            description:
+              "可选，限制时间范围。最新消息或近期走势优先用 week 或 month。",
           },
         },
         required: ["query"],
@@ -139,6 +142,9 @@ const tools = [
 const searchResearchReports = async (args, userId) => {
   const query = String((args && args.query) || "").trim();
   if (!query) throw new Error("缺少检索问题");
+  const stockCode = args.stockCode == null ? undefined : String(args.stockCode).trim();
+  // 模型参数不可信。非法代码按本次未匹配处理，不放宽为全库检索，也不打断后续联网。
+  if (stockCode && !/^[0-9]{6}$/.test(stockCode)) return "[]";
   const result = await retrieve({
     query,
     userId,
@@ -146,10 +152,17 @@ const searchResearchReports = async (args, userId) => {
     rerank: true,
     topK: 5,
     minScore: DEFAULT_MIN_SCORE,
-    stockCode: args.stockCode,
+    stockCode,
     dateFrom: args.dateFrom,
     signal: signalContext.getStore(),
   });
+  console.log("result: ", result.hits.length);
+  const hits = result.hits.filter((hit) => {
+    return (
+      hit.content.indexOf("英伟达") !== -1 || hit.title.indexOf("英伟达") !== -1
+    );
+  });
+  console.log("hits: ", hits.length);
   const passages = result.hits.map((hit, index) => ({
     id: hit.id,
     ref: index + 1,

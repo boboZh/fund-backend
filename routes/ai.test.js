@@ -54,6 +54,24 @@ describe("AI 聊天联网工具集成", () => {
     else process.env.TAVILY_API_KEY = originalKey;
   });
 
+  test("无效股票代码按空结果写回模型，仍能继续联网并完成回答", async () => {
+    axios.post.mockResolvedValue({ data: { results: [{ title: "NVIDIA 公告", url: "https://investor.nvidia.com/", content: "业务信息" }] } });
+    client.chat.completions.create
+      .mockResolvedValueOnce(stream(call("search_research_reports", { query: "英伟达未来趋势", stockCode: "NVDA" }, "rag-invalid")))
+      .mockResolvedValueOnce(stream(call("search_web", { query: "NVIDIA 未来趋势" }, "web-fallback")))
+      .mockResolvedValueOnce(stream({ content: "根据公开信息分析未来趋势。" }));
+
+    const body = await chat();
+    expect(retrieve).not.toHaveBeenCalled();
+    expect(axios.post).toHaveBeenCalledTimes(1);
+    expect(client.chat.completions.create).toHaveBeenCalledTimes(3);
+    const messages = client.chat.completions.create.mock.calls[2][0].messages;
+    expect(messages.find((msg) => msg.tool_call_id === "rag-invalid")).toMatchObject({
+      role: "tool", content: "[]",
+    });
+    expect(body).toContain("根据公开信息分析未来趋势。");
+  });
+
   test.each([{ hits: [] }, { hits: [{ id: 9, title: "胜蓝股份研报", content: "与英伟达无关的内容" }] }])(
     "研报为空或不相关后允许继续联网并保存网页来源：%j", async ({ hits }) => {
       retrieve.mockResolvedValue({ hits });

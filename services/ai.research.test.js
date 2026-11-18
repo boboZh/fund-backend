@@ -102,6 +102,36 @@ describe("search_research_reports", () => {
     expect(JSON.parse(raw)).toEqual([]);
     expect(action.msgModel(raw)).toBe("研报库里没有找到相关内容");
   });
+
+  test.each(["NVDA", "00700", "600256.SH", "英伟达", "1234567", "６００２５６"])(
+    "模型传入不支持的代码 %s 时按未匹配处理，不调用 Python 或扩大检索范围",
+    async (stockCode) => {
+      const raw = await action.func({ query: "英伟达未来趋势", stockCode }, 8);
+      expect(JSON.parse(raw)).toEqual([]);
+      expect(action.msgModel(raw)).toBe("研报库里没有找到相关内容");
+      expect(mockRetrieve).not.toHaveBeenCalled();
+    }
+  );
+
+  test("有效代码去掉首尾空格后仍正常检索", async () => {
+    mockRetrieve.mockResolvedValue({ hits: [] });
+    await action.func({ query: "广汇能源的目标价", stockCode: " 600256 " }, 8);
+    expect(mockRetrieve).toHaveBeenCalledWith(expect.objectContaining({ stockCode: "600256" }));
+  });
+
+  test("未提供代码时仍使用公司名检索", async () => {
+    mockRetrieve.mockResolvedValue({ hits: [] });
+    await action.func({ query: "英伟达未来趋势" }, 8);
+    expect(mockRetrieve).toHaveBeenCalledWith(expect.objectContaining({
+      query: "英伟达未来趋势", stockCode: undefined,
+    }));
+  });
+
+  test("真实服务故障不会伪装成没有命中", async () => {
+    mockRetrieve.mockRejectedValue(new Error("Python 检索服务没有启动"));
+    await expect(action.func({ query: "英伟达未来趋势" }, 8))
+      .rejects.toThrow("Python 检索服务没有启动");
+  });
 });
 
 describe("mergeResearchSources", () => {

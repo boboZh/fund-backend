@@ -47,6 +47,7 @@ const clampNumber = (value, min, max, fallback) => {
 };
 
 const readMeta = (body) => {
+  console.log("body: ", body);
   const stockCode = String(body.stockCode || "").trim();
   const stockName = String(body.stockName || "").trim();
   const title = String(body.title || "").trim();

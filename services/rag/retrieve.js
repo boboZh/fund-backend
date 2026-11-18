@@ -3,7 +3,7 @@ const pythonRetrieve = require("./pythonRetrieve");
 // 10 道有答案、3 道无答案上，重排分在这里分开。比较是 score < minScore。
 // 下沿能让无答案题一条都不留；上沿是最弱正确段的分数，再高就会把它丢掉。
 // 分数高于上沿的是更强的命中，要留下。默认取下沿，避免把还没见过的正确段滤掉。
-const MIN_SCORE_MIN = 0.06;
+const MIN_SCORE_MIN = 0.11;
 const MIN_SCORE_MAX = 0.7419;
 const DEFAULT_MIN_SCORE = MIN_SCORE_MIN;
 

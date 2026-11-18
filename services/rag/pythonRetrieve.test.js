@@ -12,7 +12,7 @@ const hit = {
   stockCode: "600256",
   keywordQuery: "的目标价",
   rerank: true,
-  minScore: 0.06,
+  minScore: 0.11,
   hits: [{ id: 9, content: "目标价 12 元" }],
   ranked: [],
 };
@@ -98,7 +98,9 @@ test("取消不改写成普通失败", async () => {
   err.code = "ERR_CANCELED";
   err.name = "CanceledError";
   axios.post.mockRejectedValue(err);
-  await expect(postRetrieve({ query: "目标价", userId: 8 })).rejects.toMatchObject({
+  await expect(
+    postRetrieve({ query: "目标价", userId: 8 })
+  ).rejects.toMatchObject({
     name: "AbortError",
     code: "ERR_CANCELED",
   });
