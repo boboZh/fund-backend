@@ -6,6 +6,7 @@ const {
 } = require("../controller/fund");
 const { retrieve, DEFAULT_MIN_SCORE } = require("./rag/retrieve");
 const { signalContext } = require("../utils/context");
+const { searchWeb } = require("./webSearch");
 
 const client = new OpenAI({
   apiKey: process.env.AI_API_KEY,
@@ -80,7 +81,7 @@ const tools = [
     function: {
       name: "search_research_reports",
       description:
-        "检索当前用户已入库的公司研报。用户询问某家公司的财务数字、评级、目标价、盈利预测或研报观点时必须先调用，没有股票代码也要调用。这些内容不要凭记忆回答。板块或主题的操作建议不要调用本工具。",
+        "检索当前用户已入库的公司研报。用户询问某家公司的财务数字、评级、目标价、盈利预测或研报观点时必须先调用，没有股票代码也要调用。这些内容不要凭记忆回答。没有相关片段或信息不足时继续调用 search_web；不能用不相关公司的片段作答。最新行情、股价走势可直接联网。板块或主题的操作建议不要调用本工具。",
       parameters: {
         type: "object",
         properties: {
@@ -98,6 +99,29 @@ const tools = [
             type: "string",
             description:
               "只看这一天及之后的研报，格式 YYYY-MM-DD。用户问最新研报时传入。",
+          },
+        },
+        required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "search_web",
+      description:
+        "联网搜索公开信息。研报无命中、公司不匹配或不足以回答时必须调用；股价走势、最新消息、当前行情直接调用。优先搜索公司公告、投资者关系网站及可靠财经来源。只提交公开的检索问题，不要提交用户持仓、金额等隐私信息。结果是网页摘要，不保证为实时行情。",
+      parameters: {
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description: "补全公司名及指代的独立搜索问题，美股可加英文名或股票代码。",
+          },
+          timeRange: {
+            type: "string",
+            enum: ["day", "week", "month", "year"],
+            description: "可选，限制时间范围。最新消息或近期走势优先用 week 或 month。",
           },
         },
         required: ["query"],
@@ -225,6 +249,17 @@ const briefResearchToolContent = (content) => {
 };
 
 const actions = {
+  search_web: {
+    func: searchWeb,
+    description: "正在联网搜索公开信息",
+    msgModel: (res) => {
+      const result = JSON.parse(res);
+      if (result.status !== "success") return result.message;
+      return result.results.length
+        ? `联网找到${result.results.length}条公开信息`
+        : "联网未找到有效信息";
+    },
+  },
   get_user_portfolio: {
     func: async (args, userId) => {
       const summary = await getPortfolio(userId);
