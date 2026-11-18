@@ -111,7 +111,7 @@ const tools = [
     function: {
       name: "search_web",
       description:
-        "联网搜索公开信息。研报无命中、公司不匹配或不足以回答时必须调用；股价走势、最新消息、当前行情直接调用。优先搜索公司公告、投资者关系网站及可靠财经来源。只提交公开的检索问题，不要提交用户持仓、金额等隐私信息。结果是网页摘要，不保证为实时行情。",
+        "联网搜索公开信息。研报无命中、公司不匹配或不足以回答时必须调用；股价走势、最新消息、当前行情直接调用。优先搜索公司公告、投资者关系网站及可靠财经来源。只提交公开的检索问题，不要提交用户持仓、金额等隐私信息。结果是网页摘要，不保证为实时行情。引用结果时在句末使用返回的 ref，例如 [W2]；不要在正文输出完整网址或 Markdown 网页链接，前端将引用标识显示为可直接打开来源网页的图标。",
       parameters: {
         type: "object",
         properties: {
@@ -200,7 +200,7 @@ const passageForModel = (source) => ({
 /**
  * 入参是本轮已经收集的来源，以及这一批工具名和对应的 JSON 字符串。
  * 出参是合并后的来源，以及写回模型的工具结果。
- * 只处理 search_research_reports。同一 chunk id 只保留第一次出现的片段，ref 按出现顺序连续编号。
+ * 研报和网页共用来源通道；网页在模型正文中使用 W 前缀，与研报编号区分。
  * 后面再次命中同一块时，沿用已有 ref，避免两次调用都从 [1] 计。其它工具的结果原样返回。
  */
 const mergeResearchSources = (sources, calls) => {
@@ -210,7 +210,31 @@ const mergeResearchSources = (sources, calls) => {
       .filter((item) => Number.isInteger(item.id) && item.id > 0)
       .map((item) => [item.id, item])
   );
+  const byUrl = new Map(next.filter((item) => item.type === "web").map((item) => [item.url, item]));
   const contents = calls.map((call) => {
+    if (call.name === "search_web") {
+      let result;
+      try { result = JSON.parse(call.content); } catch { return call.content; }
+      if (result?.status !== "success" || !Array.isArray(result.results)) return call.content;
+      const results = result.results.flatMap((row) => {
+        try {
+          if (!["http:", "https:"].includes(new URL(row.url).protocol)) return [];
+        } catch { return []; }
+        let source = byUrl.get(row.url);
+        if (!source) {
+          source = {
+            type: "web", ref: next.length + 1, title: row.title, url: row.url,
+            publishedDate: row.publishedDate, org: "", reportDate: "", page: null,
+            heading: null, content: row.content,
+          };
+          byUrl.set(row.url, source);
+          next.push(source);
+        }
+        // 模型只接收短编号，网址由元数据传给前端，避免流式正文生成半截长链接。
+        return [{ ref: `W${source.ref}`, title: row.title, publishedDate: row.publishedDate, content: row.content }];
+      });
+      return JSON.stringify({ ...result, results });
+    }
     if (call.name !== "search_research_reports") return call.content;
     let passages;
     try {

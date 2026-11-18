@@ -135,6 +135,34 @@ describe("search_research_reports", () => {
 });
 
 describe("mergeResearchSources", () => {
+  test("网页和研报编号互不混淆，重复网页复用编号且模型不接收网址", () => {
+    const web = { name: "search_web", content: JSON.stringify({ status: "success", results: [
+      { title: "公司公告", url: "https://example.com/report", content: "公告内容", publishedDate: "2026-11-18" },
+    ] }) };
+    const research = { name: "search_research_reports", content: JSON.stringify([
+      { id: 9, ref: 1, title: "研报", content: "机构观点" },
+    ]) };
+    const first = mergeResearchSources([], [research, web]);
+    const second = mergeResearchSources(first.sources, [web]);
+    expect(first.sources.map((source) => source.ref)).toEqual([1, 2]);
+    expect(JSON.parse(first.contents[1]).results[0]).toMatchObject({ ref: "W2", content: "公告内容" });
+    expect(first.contents[1]).not.toContain("https://example.com/report");
+    expect(second.sources).toHaveLength(2);
+    expect(JSON.parse(second.contents[0]).results[0].ref).toBe("W2");
+    expect(second.sources[1]).toMatchObject({ type: "web", url: "https://example.com/report" });
+  });
+
+  test("网页错误结果原样交还模型，危险网址不进入来源", () => {
+    const failure = JSON.stringify({ status: "error", results: [] });
+    const merged = mergeResearchSources([], [
+      { name: "search_web", content: failure },
+      { name: "search_web", content: JSON.stringify({ status: "success", results: [{ url: "javascript:alert(1)" }] }) },
+    ]);
+    expect(merged.sources).toEqual([]);
+    expect(merged.contents[0]).toBe(failure);
+    expect(JSON.parse(merged.contents[1]).results).toEqual([]);
+  });
+
   const passage = (id, ref, content) =>
     JSON.stringify([
       {

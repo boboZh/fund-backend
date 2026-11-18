@@ -79,7 +79,7 @@ describe("AI 聊天联网工具集成", () => {
       client.chat.completions.create
         .mockResolvedValueOnce(stream(call("search_research_reports", { query: "英伟达的目标价" }, "rag-1")))
         .mockResolvedValueOnce(stream(call("search_web", { query: "NVIDIA NVDA 近期走势", timeRange: "week" }, "web-1")))
-        .mockResolvedValueOnce(stream({ content: "根据[NVIDIA 公告](https://investor.nvidia.com/)分析。" }));
+        .mockResolvedValueOnce(stream({ content: `根据公开信息分析。[W${hits.length + 1}]` }));
       const body = await chat();
       expect(client.chat.completions.create).toHaveBeenCalledTimes(3);
       expect(tools.some((tool) => tool.function.name === "search_web")).toBe(true);
@@ -87,13 +87,17 @@ describe("AI 聊天联网工具集成", () => {
       expect(messages[0].content).toContain("必须继续调用 search_web");
       expect(messages[0].content).toContain("片段不相关");
       expect(messages.find((msg) => msg.tool_call_id === "web-1")).toMatchObject({
-        role: "tool", content: expect.stringContaining('"url":"https://investor.nvidia.com/"'),
+        role: "tool", content: expect.stringContaining(`"ref":"W${hits.length + 1}"`),
       });
       expect(axios.post).toHaveBeenCalledTimes(1);
       expect(body).toContain("正在联网搜索公开信息");
       expect(body).toContain("https://investor.nvidia.com/");
       expect(saveToolCallResultMessage).toHaveBeenCalledWith("session-1", 8, expect.stringContaining('"status":"success"'), "web-1");
-      expect(saveUiMsg).toHaveBeenCalledWith("session-1", 8, "ai", expect.stringContaining("https://investor.nvidia.com/"), "success", expect.any(Array));
+      expect(saveUiMsg).toHaveBeenCalledWith("session-1", 8, "ai", `根据公开信息分析。[W${hits.length + 1}]`, "success", expect.arrayContaining([
+        expect.objectContaining({ type: "web", url: "https://investor.nvidia.com/" }),
+      ]));
+      expect(messages.find((msg) => msg.tool_call_id === "web-1").content).not.toContain("https://");
+      expect(body.indexOf("[CITATIONS]")).toBeLessThan(body.indexOf("根据公开信息分析。"));
     }
   );
 
