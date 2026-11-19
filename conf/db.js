@@ -12,9 +12,15 @@ const result = dotenv.config({
   path: envPath,
 });
 
-if (result.error) {
-  console.error(`无法加载配置文件：${envPath}`);
-  process.exit();
+// Docker injects environment variables without creating an .env file.
+if (result.error && result.error.code !== "ENOENT") {
+  throw new Error(`无法加载配置文件：${envPath}`);
+}
+
+const required = ["DB_HOST", "DB_USER", "DB_PASS", "DB_PORT", "DB_Name"];
+const missing = required.filter((key) => !process.env[key]);
+if (missing.length) {
+  throw new Error(`缺少数据库环境变量：${missing.join(", ")}`);
 }
 
 // 加载完配置文件，就可以拿到process.env中的变量了

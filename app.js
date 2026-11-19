@@ -13,6 +13,7 @@ const { ensureCollection } = require("./services/rag/qdrant");
 const { WebSocketServer } = require("ws");
 
 const app = express();
+app.use(require("./routes/health"));
 
 // --- 中间件配置 ---
 

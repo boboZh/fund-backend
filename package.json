@@ -8,7 +8,8 @@
     "dev": "cross-env NODE_ENV=dev node --watch app.js",
     "prod": "cross-env NODE_ENV=production pm2 start app.js",
     "db:init:dev": "cross-env NODE_ENV=dev node scripts/initDb.js",
-    "db:init:prod": "cross-env NODE_ENV=production node scripts/initDb.js"
+    "db:init:prod": "cross-env NODE_ENV=production node scripts/initDb.js",
+    "start": "node app.js"
   },
   "keywords": [],
   "author": "",
@@ -16,31 +17,31 @@
   "dependencies": {
     "@qdrant/js-client-rest": "1.15.1",
     "axios": "^1.13.4",
-    "cheerio": "^1.2.0",
-    "cors": "^2.8.6",
-    "express": "^5.2.1",
-    "iconv-lite": "^0.7.2",
-    "pdfjs-dist": "^4.10.38",
-    "web-streams-polyfill": "^4.2.0"
-  },
-  "devDependencies": {
     "baidu-aip-sdk": "^4.16.16",
+    "cheerio": "^1.2.0",
     "cookie-parser": "^1.4.7",
-    "cross-env": "^10.1.0",
-    "crypto": "^1.0.1",
+    "cors": "^2.8.6",
     "dotenv": "^17.2.3",
-    "eslint": "^9.39.2",
+    "express": "^5.2.1",
     "fs-extra": "^11.3.4",
     "http-errors": "^2.0.1",
     "humps": "^2.0.1",
-    "jest": "^30.2.0",
+    "iconv-lite": "^0.7.2",
     "multer": "^2.1.1",
     "mysql2": "^3.16.2",
-    "nodemon": "^3.1.11",
     "openai": "^6.18.0",
+    "pdfjs-dist": "^4.10.38",
     "redis": "^5.10.0",
     "uuid": "^13.0.0",
+    "web-streams-polyfill": "^4.2.0",
     "ws": "^8.19.0",
     "xss": "^1.0.15"
+  },
+  "devDependencies": {
+    "cross-env": "^10.1.0",
+    "crypto": "^1.0.1",
+    "eslint": "^9.39.2",
+    "jest": "^30.2.0",
+    "nodemon": "^3.1.11"
   }
 }
