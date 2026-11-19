@@ -17,3 +17,8 @@ jobs:
         run: |
           npm install
           npm run test
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Test deployment recovery logic
+        run: python -m unittest discover -s deploy/tests -v

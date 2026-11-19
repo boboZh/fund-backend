@@ -2,8 +2,10 @@
 
 ## 当前范围
 
-本次只补齐镜像构建、健康检查和 GHCR 发布。`cd.yml` 已替换旧部署逻辑：发布镜像后不会 SSH、SCP、重载 PM2 或切换线上入口。现有服务器服务继续运行。
-尚未包含生产 Compose、服务器部署脚本、自动回滚或数据搬迁，先不要删除旧服务和目录。
+已包含镜像构建、健康检查、GHCR 发布，以及可选的 SSH 自动部署。自动部署默认关闭：先安装并验证共享部署脚本，再配置仓库变量 `DEPLOY_ENABLED=true`。
+手动发布默认只推送镜像，勾选 deploy 后才更新服务器；启用开关后，版本 tag 发布会自动部署。
+SSH 使用专用部署密钥、受限的 `fund-deploy` 入口；密钥口令通过 `SERVER_SSH_PASSPHRASE` 提供。先安装 deploy-ssh.py 并验证新公钥限制，再运行更新后的工作流。
+服务器安装步骤、Secrets、发布记录和回退说明统一见 fund-backend 仓库的 `deploy/README.md`。旧目录等自动更新验收后再清理。
 
 ## 本地构建
 
@@ -33,8 +35,8 @@ docker build -t fund-backend:local .
 - 生产运行所需依赖已移到 dependencies，镜像执行 `npm ci --omit=dev`。
 - 支持通过 `--env-file`/Compose `env_file` 注入配置，不要求磁盘存在 `.env.production`；原本地 `.env.dev` 加载方式保留。
 - 必需变量：`DB_HOST`、`DB_USER`、`DB_PASS`、`DB_PORT`、`DB_Name`。其他 AI、Redis、Qdrant 配置继续沿用现有代码中的名称。数据库名大小写必须保持 `DB_Name`。
-- 同一 Compose 网络中配置 `RAG_INGEST_URL=http://rag:9001/ingest`、`RAG_RETRIEVE_URL=http://rag:9001/retrieve`。
-- MySQL、Redis、Qdrant 地址必须从容器可达，不能直接沿用宿主机的 `127.0.0.1`。
+- 当前生产使用主机网络：`RAG_INGEST_URL=http://127.0.0.1:9001/ingest`、`RAG_RETRIEVE_URL=http://127.0.0.1:9001/retrieve`。
+- 当前主机网络下，MySQL、Redis、Qdrant 分别通过本机 3306、6379、6333 访问；只有普通桥接网络才不能直接用宿主机的 localhost。
 - 挂载业务数据到 `/app/public/uploads` 和 `/app/uploads`。删除旧部署前，先把数据迁到独立宿主机目录；挂载目录须允许镜像内 node 用户（UID 1000）写入。只调整选定数据目录的权限，不修改数据库目录权限。
 - `/healthz` 仅表示 HTTP 进程存活，不检查数据库、基金目录加载状态或 RAG。正式部署要另做依赖和业务验证。
 - 后端启动会恢复中断的入库任务、检查和初始化 Qdrant 集合，隔离测试不要直接连生产库。
